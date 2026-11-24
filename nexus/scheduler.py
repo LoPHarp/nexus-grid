@@ -22,6 +22,7 @@ class Task:
     state: str = "queued"          # queued | running | done | failed
     worker_id: str | None = None
     attempts: int = 0
+    assigned_at: float = 0.0
     result: bytes | None = None    # the binary result frame as received
 
 
@@ -59,7 +60,9 @@ class Scheduler:
     def submit(self, type_: str, params: dict, priority: int = 0) -> dict:
         if type_ not in HANDLERS:
             raise ValueError(f"unknown task type {type_!r}; known: {sorted(HANDLERS)}")
-        parts = HANDLERS[type_].split(params)
+        h = HANDLERS[type_]
+        params = h.normalize(params) if hasattr(h, "normalize") else params
+        parts = h.split(params)
         job = {"id": self._job_id, "type": type_, "params": params, "priority": priority,
                "state": "running", "total": len(parts), "done": 0, "created": now(), "task_ids": []}
         self._job_id += 1
@@ -112,6 +115,7 @@ class Scheduler:
             if t is None:
                 return
             t.state, t.worker_id, t.attempts, w.task_id = "running", w.id, t.attempts + 1, t.id
+            t.assigned_at = time.monotonic()
             asyncio.get_running_loop().create_task(self._send_task(w, t))
             self.emit({"e": "task_assigned", "task_id": t.id, "job_id": t.job_id,
                        "worker_id": w.id, "tile": [t.params["tx"], t.params["ty"]], "attempt": t.attempts})
@@ -189,6 +193,7 @@ class Scheduler:
             job["state"], job["finished"] = "done", now()
         self.db.save_job(job)
         self.emit({"e": "task_done", "task_id": task_id, "job_id": job["id"], "worker_id": w.id,
+                   "latency_ms": round((time.monotonic() - t.assigned_at) * 1000),
                    "tile": [t.params["tx"], t.params["ty"]], "done": job["done"], "total": job["total"]})
         if job["state"] == "done":
             self.emit({"e": "job_done", "job": self.job_public(job)})

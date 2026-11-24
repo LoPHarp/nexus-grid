@@ -5,8 +5,13 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import subprocess
+import sys
+from pathlib import Path
+
+from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 
 from .db import DB
 from .scheduler import Scheduler
@@ -33,11 +38,15 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
             await asyncio.sleep(0.5)
             sched.reap()
 
+    demo_procs: dict[str, subprocess.Popen] = {}     # workers spawned by Demo Mode, by worker id
+
     @asynccontextmanager
     async def lifespan(app):
         task = asyncio.create_task(reaper())
         yield
         task.cancel()
+        for p in demo_procs.values():
+            p.kill()
 
     app = FastAPI(title="Nexus Grid", version="0.1.0", lifespan=lifespan)
     app.state.sched = sched
@@ -104,6 +113,33 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
                 "queue_depth": sched.queue_depth(), "tasks_per_s": round(sched.throughput(), 2),
                 "jobs_running": sum(1 for j in sched.jobs.values() if j["state"] == "running")}
 
+    # ---- Demo Mode (local workers started by the server, for a one-click demonstration) ----
+    @app.post("/api/demo")
+    async def demo(request: Request, workers: int = 4):
+        """Start up to `workers` local demo workers (max 8) and submit a Mandelbrot job."""
+        port = os.environ.get("PORT") or request.url.port or 8000
+        for wid, p in list(demo_procs.items()):
+            if p.poll() is not None:
+                del demo_procs[wid]
+        for i in range(1, min(max(workers, 1), 8) + 1):
+            wid = f"demo{i}"
+            if wid not in demo_procs:
+                demo_procs[wid] = subprocess.Popen(
+                    [sys.executable, "-m", "nexus.worker", "--url", f"ws://127.0.0.1:{port}/ws/worker",
+                     "--name", wid, "--id", wid, "--delay", "0.3"], stdout=subprocess.DEVNULL)
+        job = sched.submit("mandelbrot", {"width": 640, "height": 480, "tile": 40, "max_iter": 200,
+                                          "cx": -0.7436, "cy": 0.1318, "view_w": 0.02})
+        return {"workers": sorted(demo_procs), "job": job}
+
+    @app.post("/api/workers/{wid}/kill")
+    async def kill_worker(wid: str):
+        """Kill a Demo Mode worker process (to show failover). Only workers started by /api/demo."""
+        p = demo_procs.get(wid)
+        if not p or p.poll() is not None:
+            raise HTTPException(404, "not a running demo worker")
+        p.kill()
+        return {"killed": wid}
+
     # ---- WebSockets ----
     @app.websocket("/ws/worker")
     async def ws_worker(ws: WebSocket):
@@ -152,6 +188,9 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
         finally:
             subscribers.discard(q)
 
+    web = Path(__file__).resolve().parent.parent / "web"
+    if web.is_dir():
+        app.mount("/", StaticFiles(directory=web, html=True), name="web")   # must stay last
     return app
 
 

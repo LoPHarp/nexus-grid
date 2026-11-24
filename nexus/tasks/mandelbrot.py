@@ -4,9 +4,14 @@ DEFAULTS = {"width": 800, "height": 600, "tile": 100, "max_iter": 200,
             "cx": -0.5, "cy": 0.0, "view_w": 3.0}
 
 
+def normalize(params: dict) -> dict:
+    """Fill defaults so the stored job (and the dashboard) sees the real geometry."""
+    return {**DEFAULTS, **params}
+
+
 def split(params: dict) -> list[dict]:
     """Server side: job params -> one params dict per tile (= per task)."""
-    p = {**DEFAULTS, **params}
+    p = normalize(params)
     for k in ("width", "height", "tile", "max_iter"):
         p[k] = int(p[k])
     if not (1 <= p["width"] <= 4096 and 1 <= p["height"] <= 4096 and 8 <= p["tile"] <= 512
