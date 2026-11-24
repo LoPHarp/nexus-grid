@@ -16,10 +16,10 @@
 - `nexus/scheduler.py` - jobs, tasks, workers. One task per worker at a time. Queue ordered by priority, then FIFO; re-queued tasks go to the front of their priority level.
 - `nexus/tasks/` - task handlers. `split(params)` (server) turns a job into tasks, `compute(params)` (worker) runs one. A new task type is one module registered in `HANDLERS`.
 - `nexus/worker.py` - connects, computes in a thread (so heartbeats continue during computation), reconnects with exponential backoff (1 s to 30 s, jittered).
-- `web/index.html` - single-file dashboard (plain canvas, no libraries): mosaic, worker graph with pulses, five charts sampled at 1 Hz in the browser, HUD. It reads `/ws/events`, fetches tile frames from `/api/tiles/{id}` and decodes them with `DecompressionStream`.
+- `web/` (`index.html`, `app.css`, `app.js`) - dashboard, no framework: HUD with odometer counters and sparklines, tile mosaic (DOM tiles with CSS animation), worker graph (HTML nodes, SVG links, Web Animations pulses), per-worker charts, event feed, My Worker view, connection states (sleeping, reconnecting, error). It reads `/ws/events`, fetches tile frames from `/api/tiles/{id}` and decodes them with `DecompressionStream`.
 - `POST /api/demo`, `POST /api/workers/{id}/kill` - Demo Mode: the server spawns local worker processes and can kill them.
 - `nexus/tasks/image.py` - image batch handler (Pillow). File results use binary frame type 2 (same header, payload = encoded image); `GET /api/jobs/{id}/download` zips them.
-- `nexus/gui.py`, `client.py` - desktop worker window and the PyInstaller entry point.
+- `nexus/desktop.py`, `client.py` - desktop client: pywebview window (frameless, page loaded from `web/`) with a `LocalWorker` JS API (connect, disconnect, state, window controls) over the worker; `client.py` is the PyInstaller entry point. The page calls the server cross-origin (CORS is open, auth is a header).
 - `nexus/db.py` - job history in SQLite. Tile results are kept in memory only.
 
 ## Data flow

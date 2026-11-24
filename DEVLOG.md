@@ -38,3 +38,11 @@
 - Verified: the downloaded Linux release binary starts. Windows and macOS assets exist but were not run by hand.
 - Not done yet: the video itself (Denys records it with docs/DEMO.md), the submission form.
 - Delegated to free models: nothing.
+
+## 2026-11-24 - UI stage: dashboard and desktop client rebuilt to docs/design
+- Done: `web/` rewritten from the four reference screens + DESIGN.md (tokens, Inter/JetBrains Mono bundled, HUD odometer + sparklines, DOM tile mosaic with fill/pulse/orphan states, SVG/HTML graph with Bezier pulses, failure shake + reassignment chips, workers list, event feed, per-worker charts, My Worker view, empty / reconnecting / server-sleeping / error states, compact layout with tabs and ticker, reduced-motion path). Desktop client = same page in a pywebview window with a Python `LocalWorker` API; the tkinter window was removed. Server: CORS, `jobs_done` metric, star names for demo workers.
+- Why: one UI for browser and desktop; the page is bundled so the client opens while a free host sleeps; DOM tiles let CSS do the per-tile animation on GPU properties.
+- Checked with headless Chrome (CDP) at 1280x720 (page fits without scrolling), 390 px compact, and states: empty, failover (killed worker, 3/4 alert, orphan tile, feed), reconnecting (attempt 3/5, dimmed HUD, amber bar), WS_1006 after 5 attempts, AUTH_401 banner, sleeping card, reduced-motion load. A real native window (Qt) and the 253 MB PyInstaller binary both loaded the bundled page, connected and registered as a worker (DOM probe: `Online · Idle`). My Worker screenshot uses a stub API.
+- Fixed on the way: compact tab panel hidden by a leftover min-height; right column overflowed at 720 px; mosaic tiles stretched (now square, legend below); feed panel pushed the page height.
+- Not verified: Windows and macOS builds (CI only, to be rebuilt on the next tag), tooltip and hover motion by eye, 60 fps claims (no profiler run), real 60 s cold start.
+- Delegated to free models: nothing (design and motion by Claude).
