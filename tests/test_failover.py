@@ -85,3 +85,18 @@ def test_worker_reconnects_after_server_restart(procs, tmp_path):
     spawn("-m", "uvicorn", "nexus.server:app", "--port", str(port), "--log-level", "warning")
     wait_for(lambda: _up(port), 20, "server did not restart")
     wait_for(lambda: [w["alive"] for w in call(port, "/api/workers")] == [True], 20, "worker did not reconnect")
+
+
+def test_dashboard_and_demo_endpoint(procs):
+    port, spawn = procs
+    html = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read().decode()
+    assert "NEXUS GRID" in html
+    # demo workers are real processes started by the server; a killed one is reported dead
+    res = call(port, "/api/demo?workers=2", "POST")
+    assert res["workers"] == ["demo1", "demo2"] and res["job"]["total"] == 192
+    wait_for(lambda: len(call(port, "/api/workers")) == 2, 15, "demo workers did not connect")
+    wait_for(lambda: call(port, f"/api/jobs/{res['job']['id']}")["done"] > 0, 20, "no tiles done")
+    assert call(port, "/api/workers/demo1/kill", "POST") == {"killed": "demo1"}
+    wait_for(lambda: not {w["id"]: w for w in call(port, "/api/workers")}["demo1"]["alive"], 10, "kill not noticed")
+    tile = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/tiles/1", timeout=5).read()
+    assert tile[0] == 1 and len(tile) > 9                            # binary result frame

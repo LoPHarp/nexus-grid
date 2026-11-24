@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus Grid</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e; --acc:#58a6ff; --bad:#f85149; --ok:#3fb950; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, sans-serif; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:10px 16px; border-bottom:1px solid var(--line); }
+  h1 { font-size:18px; margin:0; letter-spacing:.5px; }
+  #conn { width:10px; height:10px; border-radius:50%; background:var(--bad); }
+  #conn.on { background:var(--ok); }
+  .grow { flex:1; }
+  button { background:var(--acc); color:#04111f; border:0; border-radius:6px; padding:8px 14px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); font-weight:400; }
+  #hud { display:flex; gap:18px; }
+  #hud div { text-align:right; min-width:64px; }
+  #hud b { display:block; font-size:20px; font-variant-numeric:tabular-nums; }
+  #hud span { color:var(--dim); font-size:11px; text-transform:uppercase; }
+  main { display:grid; grid-template-columns: 1fr 1fr; gap:12px; padding:12px 16px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px; min-width:0; }
+  .panel h2 { margin:0 0 8px; font-size:12px; color:var(--dim); text-transform:uppercase; font-weight:600; display:flex; gap:10px; align-items:center; }
+  canvas { width:100%; display:block; border-radius:4px; background:#010409; }
+  #mosaic { image-rendering: pixelated; }
+  #charts { grid-column: 1 / -1; display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+  #charts canvas { height:130px; }
+  #progress { color:var(--fg); font-variant-numeric:tabular-nums; }
+  #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--panel); border:1px solid var(--line); padding:8px 14px; border-radius:6px; opacity:0; transition:opacity .3s; pointer-events:none; }
+  #toast.show { opacity:1; }
+  label { font-weight:400; text-transform:none; cursor:pointer; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } #hud { width:100%; justify-content:space-between; } }
+</style>
+</head>
+<body>
+<header>
+  <span id="conn" title="event stream"></span>
+  <h1>NEXUS GRID</h1>
+  <span class="grow"></span>
+  <div id="hud">
+    <div><b id="h-tps">0</b><span>tasks/s</span></div>
+    <div><b id="h-lat">-</b><span>latency ms</span></div>
+    <div><b id="h-wk">0</b><span>workers</span></div>
+    <div><b id="h-q">0</b><span>queued</span></div>
+  </div>
+  <button id="demo">Demo Mode</button>
+</header>
+<main>
+  <section class="panel">
+    <h2>Mosaic <span id="progress"></span><span class="grow"></span>
+      <label><input type="checkbox" id="tint" checked> tint by worker</label></h2>
+    <canvas id="mosaic" width="640" height="480"></canvas>
+  </section>
+  <section class="panel">
+    <h2>Workers <span style="text-transform:none;font-weight:400">(click a demo worker to kill it)</span></h2>
+    <canvas id="graph" width="640" height="480"></canvas>
+  </section>
+  <div id="charts">
+    <section class="panel"><h2>CPU load %</h2><canvas data-key="cpu"></canvas></section>
+    <section class="panel"><h2>Temp &deg;C (or memory %)</h2><canvas data-key="temp"></canvas></section>
+    <section class="panel"><h2>Throughput tasks/s</h2><canvas data-key="tp"></canvas></section>
+    <section class="panel"><h2>Queue depth</h2><canvas data-key="queue"></canvas></section>
+    <section class="panel"><h2>Task latency ms</h2><canvas data-key="lat"></canvas></section>
+  </div>
+</main>
+<div id="toast"></div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const COLORS = ["#58a6ff","#f0883e","#3fb950","#d2a8ff","#ff7b72","#e3b341","#56d4dd","#f778ba","#a5d6ff","#7ee787"];
+const HIST = 120;
+const workers = new Map();          // id -> worker view model
+let job = null;                      // current job being shown
+let tiles = new Map();               // "tx,ty" -> {worker, pix}
+let queue = 0, queueHist = [], lastLat = [], pulses = [];
+
+// ---------- helpers ----------
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2500); }
+function colorOf(id) { return workers.get(id)?.color || "#888"; }
+function addWorker(w) {
+  let v = workers.get(w.id);
+  if (!v) {
+    v = { id: w.id, color: COLORS[workers.size % COLORS.length], hist: { cpu: [], temp: [], tp: [], lat: [] }, done: [], lat: 0 };
+    workers.set(w.id, v);
+  }
+  Object.assign(v, { name: w.name, alive: w.alive, busy: w.busy, metrics: w.metrics || {} });
+  return v;
+}
+const LUT = (() => {
+  const a = new Uint8ClampedArray(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255;
+    a[i*3] = 255 * (0.5 + 0.5 * Math.sin(6.28 * (t * 3 + 0.0)));
+    a[i*3+1] = 255 * (0.5 + 0.5 * Math.sin(6.28 * (t * 3 + 0.33)));
+    a[i*3+2] = 255 * (0.5 + 0.5 * Math.sin(6.28 * (t * 3 + 0.66)));
+  }
+  return a;
+})();
+
+// ---------- mosaic ----------
+const mosaic = $("mosaic"), mctx = mosaic.getContext("2d");
+function newJob(j) {
+  job = { id: j.id, w: j.params.width, h: j.params.height, tile: j.params.tile, max: j.params.max_iter, total: j.total, done: j.done, state: j.state };
+  tiles = new Map();
+  mosaic.width = job.w; mosaic.height = job.h;
+  mctx.fillStyle = "#010409"; mctx.fillRect(0, 0, job.w, job.h);
+  drawGrid(); updateProgress();
+}
+function drawGrid() {
+  mctx.strokeStyle = "#21262d"; mctx.lineWidth = 1;
+  for (let x = 0; x < job.w; x += job.tile) { mctx.beginPath(); mctx.moveTo(x + .5, 0); mctx.lineTo(x + .5, job.h); mctx.stroke(); }
+  for (let y = 0; y < job.h; y += job.tile) { mctx.beginPath(); mctx.moveTo(0, y + .5); mctx.lineTo(job.w, y + .5); mctx.stroke(); }
+}
+function updateProgress() { $("progress").textContent = job ? `job #${job.id}: ${job.done}/${job.total} ${job.state}` : ""; }
+function drawTile(key) {
+  const t = tiles.get(key); if (!t) return;
+  const [tx, ty] = key.split(",").map(Number), px = tx * job.tile, py = ty * job.tile;
+  if (t.pix) mctx.putImageData(t.pix, px, py);
+  else { mctx.fillStyle = colorOf(t.worker); mctx.fillRect(px, py, job.tile, job.tile); return; }
+  if ($("tint").checked) { mctx.globalAlpha = .35; mctx.fillStyle = colorOf(t.worker); mctx.fillRect(px, py, t.pix.width, t.pix.height); mctx.globalAlpha = 1; }
+}
+async function decodeTile(buf) {
+  const dv = new DataView(buf), w = dv.getUint16(5), h = dv.getUint16(7);
+  const raw = await new Response(new Blob([buf.slice(9)]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+  const it = new Uint16Array(raw), img = new ImageData(w, h), max = job.max;
+  for (let i = 0; i < it.length; i++) {
+    const v = it[i], o = i * 4;
+    if (v >= max) { img.data[o+3] = 255; continue; }
+    const c = (v * 255 / 64 | 0) & 255 ;
+    img.data[o] = LUT[c*3]; img.data[o+1] = LUT[c*3+1]; img.data[o+2] = LUT[c*3+2]; img.data[o+3] = 255;
+  }
+  return img;
+}
+async function loadTile(taskId, key, jobId) {
+  tiles.get(key).pix = null; drawTile(key);                 // solid worker colour until pixels arrive
+  try {
+    const r = await fetch(`/api/tiles/${taskId}`); if (!r.ok) return;
+    const img = await decodeTile(await r.arrayBuffer());
+    if (job && job.id === jobId && tiles.has(key)) { tiles.get(key).pix = img; drawTile(key); }
+  } catch (e) { console.warn("tile", e); }
+}
+$("tint").onchange = () => { if (!job) return; mctx.fillStyle = "#010409"; mctx.fillRect(0, 0, job.w, job.h); drawGrid(); for (const k of tiles.keys()) drawTile(k); };
+async function restoreJob(j) {
+  newJob(j);
+  try {
+    const list = await (await fetch(`/api/jobs/${j.id}/tiles`)).json();
+    for (const t of list) { const key = `${t.tx},${t.ty}`; tiles.set(key, { worker: t.worker_id }); loadTile(t.task_id, key, j.id); }
+  } catch (e) { console.warn(e); }
+}
+
+// ---------- graph ----------
+const graph = $("graph"), gctx = graph.getContext("2d");
+function layout() {
+  const W = graph.width, H = graph.height, cx = W / 2, cy = H / 2, R = Math.min(W, H) * 0.36;
+  const list = [...workers.values()];
+  list.forEach((w, i) => { const a = -Math.PI / 2 + i * 2 * Math.PI / Math.max(list.length, 1); w.x = cx + R * Math.cos(a); w.y = cy + R * Math.sin(a); });
+  return { cx, cy };
+}
+function pulse(from, to, color) { pulses.push({ from, to, color, t0: performance.now() }); }
+function serverPt() { return { x: graph.width / 2, y: graph.height / 2 }; }
+function drawGraph(now) {
+  const { cx, cy } = layout();
+  gctx.clearRect(0, 0, graph.width, graph.height);
+  for (const w of workers.values()) {
+    gctx.strokeStyle = w.alive ? "#30363d" : "#5b2321"; gctx.lineWidth = 2; gctx.setLineDash(w.alive ? [] : [4, 6]);
+    gctx.beginPath(); gctx.moveTo(cx, cy); gctx.lineTo(w.x, w.y); gctx.stroke(); gctx.setLineDash([]);
+  }
+  gctx.fillStyle = "#1f6feb"; gctx.beginPath(); gctx.arc(cx, cy, 30, 0, 7); gctx.fill();
+  gctx.fillStyle = "#fff"; gctx.font = "bold 13px system-ui"; gctx.textAlign = "center"; gctx.textBaseline = "middle"; gctx.fillText("SERVER", cx, cy);
+  for (const w of workers.values()) {
+    const col = w.alive ? w.color : "#f85149", r = 22;
+    gctx.beginPath(); gctx.arc(w.x, w.y, r, 0, 7);
+    gctx.fillStyle = w.alive && w.busy ? col : "#0d1117"; gctx.fill();
+    gctx.lineWidth = 3; gctx.strokeStyle = col; gctx.stroke();
+    gctx.fillStyle = w.alive && w.busy ? "#04111f" : col; gctx.font = "12px system-ui"; gctx.fillText(w.alive ? (w.metrics.cpu ?? 0).toFixed(0) + "%" : "dead", w.x, w.y);
+    gctx.fillStyle = "#8b949e"; gctx.fillText(w.name, w.x, w.y + r + 12);
+  }
+  pulses = pulses.filter(p => now - p.t0 < 700);
+  for (const p of pulses) {
+    const k = (now - p.t0) / 700, a = p.from, b = p.to;
+    gctx.beginPath(); gctx.arc(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, 6, 0, 7);
+    gctx.fillStyle = p.color; gctx.shadowColor = p.color; gctx.shadowBlur = 12; gctx.fill(); gctx.shadowBlur = 0;
+  }
+  requestAnimationFrame(drawGraph);
+}
+graph.addEventListener("click", ev => {
+  const r = graph.getBoundingClientRect(), x = (ev.clientX - r.left) * graph.width / r.width, y = (ev.clientY - r.top) * graph.height / r.height;
+  for (const w of workers.values()) if (w.alive && Math.hypot(w.x - x, w.y - y) < 24) {
+    fetch(`/api/workers/${w.id}/kill`, { method: "POST" }).then(r => toast(r.ok ? `killed ${w.name}` : `${w.name} is not a demo worker`));
+  }
+});
+graph.addEventListener("mousemove", ev => {
+  const r = graph.getBoundingClientRect(), x = (ev.clientX - r.left) * graph.width / r.width, y = (ev.clientY - r.top) * graph.height / r.height;
+  graph.style.cursor = [...workers.values()].some(w => w.alive && Math.hypot(w.x - x, w.y - y) < 24) ? "pointer" : "default";
+});
+
+// ---------- charts ----------
+const charts = [...document.querySelectorAll("#charts canvas")];
+function drawChart(cv) {
+  const dpr = devicePixelRatio || 1, W = cv.clientWidth * dpr, H = cv.clientHeight * dpr;
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const c = cv.getContext("2d"), key = cv.dataset.key;
+  c.clearRect(0, 0, W, H);
+  const series = key === "queue" ? [{ color: "#58a6ff", data: queueHist }] : [...workers.values()].map(w => ({ color: w.alive ? w.color : "#6e4443", data: w.hist[key] }));
+  let max = 1; for (const s of series) for (const v of s.data) if (v > max) max = v;
+  max *= 1.15;
+  c.strokeStyle = "#21262d"; c.fillStyle = "#8b949e"; c.font = `${10 * dpr}px system-ui`; c.lineWidth = 1;
+  for (let i = 0; i <= 2; i++) { const y = H - 14 * dpr - (H - 20 * dpr) * i / 2; c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); c.fillText((max * i / 2).toFixed(max < 5 ? 1 : 0), 3, y - 3); }
+  for (const s of series) {
+    if (s.data.length < 2) continue;
+    c.strokeStyle = s.color; c.lineWidth = 1.8 * dpr; c.beginPath();
+    s.data.forEach((v, i) => { const x = W - (s.data.length - 1 - i) * W / HIST, y = H - 14 * dpr - (H - 20 * dpr) * v / max; i ? c.lineTo(x, y) : c.moveTo(x, y); });
+    c.stroke();
+  }
+}
+function sample() {                                          // 1 Hz: one point per worker per chart
+  const now = performance.now();
+  for (const w of workers.values()) {
+    if (!w.alive) continue;
+    w.done = w.done.filter(t => now - t < 5000);
+    const push = (k, v) => { w.hist[k].push(v); if (w.hist[k].length > HIST) w.hist[k].shift(); };
+    push("cpu", w.metrics.cpu ?? 0); push("temp", w.metrics.temp ?? w.metrics.mem ?? 0);
+    push("tp", w.done.length / 5); push("lat", w.lat);
+  }
+  queueHist.push(queue); if (queueHist.length > HIST) queueHist.shift();
+  charts.forEach(drawChart);
+}
+setInterval(sample, 1000);
+
+// ---------- HUD ----------
+async function hud() {
+  try {
+    const m = await (await fetch("/api/metrics")).json();
+    $("h-tps").textContent = m.tasks_per_s.toFixed(1); $("h-wk").textContent = m.workers_alive; $("h-q").textContent = m.queue_depth; queue = m.queue_depth;
+    const l = lastLat.slice(-10); $("h-lat").textContent = l.length ? Math.round(l.reduce((a, b) => a + b) / l.length) : "-";
+  } catch (e) {}
+}
+setInterval(hud, 1000);
+
+// ---------- events ----------
+function onEvent(e) {
+  switch (e.e) {
+    case "snapshot": {
+      e.workers.forEach(addWorker);
+      const js = e.jobs.filter(j => j.type === "mandelbrot");
+      if (js.length) restoreJob(js[js.length - 1]);
+      break; }
+    case "job_created": if (e.job.type === "mandelbrot") newJob(e.job); break;
+    case "worker_joined": addWorker(e.worker); toast(`${e.worker.name} joined`); break;
+    case "worker_lost": {
+      const w = workers.get(e.worker_id); if (!w) break;
+      w.alive = false; w.busy = false; layout();
+      toast(`${w.name} lost (${e.reason}); ${e.requeued.length} task(s) re-queued`);
+      const alive = [...workers.values()].filter(x => x.alive);
+      e.requeued.forEach((_, i) => { const t = alive[i % Math.max(alive.length, 1)]; if (t) pulse(w, t, "#f85149"); });
+      break; }
+    case "task_assigned": {
+      const w = workers.get(e.worker_id); if (w) { w.busy = true; pulse(serverPt(), w, w.color); }
+      break; }
+    case "task_done": {
+      const w = workers.get(e.worker_id);
+      if (w) { w.busy = false; w.done.push(performance.now()); w.lat = e.latency_ms; lastLat.push(e.latency_ms); if (lastLat.length > 50) lastLat.shift(); pulse(w, serverPt(), w.color); }
+      if (job && e.job_id === job.id) {
+        const key = `${e.tile[0]},${e.tile[1]}`;
+        tiles.set(key, { worker: e.worker_id }); job.done = e.done; updateProgress();
+        loadTile(e.task_id, key, job.id);
+      }
+      break; }
+    case "job_done": if (job && e.job.id === job.id) { job.state = "done"; updateProgress(); toast(`job #${job.id} finished`); } break;
+    case "job_failed": if (job && e.job.id === job.id) { job.state = "failed"; updateProgress(); } break;
+    case "job_deleted": if (job && e.job_id === job.id) { job.state = "deleted"; updateProgress(); } break;
+    case "metrics": { const w = workers.get(e.worker_id); if (w) { w.metrics = e.metrics; } queue = e.queue; break; }
+  }
+}
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/events");
+  ws.onopen = () => $("conn").classList.add("on");
+  ws.onmessage = m => onEvent(JSON.parse(m.data));
+  ws.onclose = () => { $("conn").classList.remove("on"); setTimeout(connect, 2000); };   // also covers a sleeping host
+}
+connect();
+
+$("demo").onclick = async () => {
+  const b = $("demo"); b.disabled = true;
+  try { const r = await fetch("/api/demo?workers=4", { method: "POST" }); toast(r.ok ? "demo started" : "demo failed: " + r.status); }
+  finally { setTimeout(() => b.disabled = false, 1500); }
+};
+requestAnimationFrame(drawGraph);
+</script>
+</body>
+</html>
