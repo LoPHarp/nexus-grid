@@ -29,3 +29,4 @@
 - Failures fixed: worker CLI did not turn `https://` into `wss://` (found when testing against the public URL, reconnect loop with InvalidURI) -> shared `to_ws()`. The public server still ran the Stage 3 build, so the public image test waits for the redeploy.
 - Tested: `pytest` 22 passed; GUI and the packed Linux binary connected to a local server and the binary's worker took part in a job; local image job 3 files 9.3 MB -> 0.29 MB. No screenshot tool on this machine, so the window was checked by behaviour, not by eye. Windows/macOS builds not run yet.
 - Delegated to free models: nothing.
+- After push: Render redeployed; public image job (3 files, 9.3 MB -> 0.47 MB) through `wss://` worker + `tools/submit_images.py` with the key from `.env`: done. CI `build-client` run: Linux, Windows, macOS builds all succeeded (artifacts ~50/31/20 MB).

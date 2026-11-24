@@ -43,7 +43,7 @@ Docker: `docker build -t nexus-grid . && docker run -p 8000:8000 -e PORT=8000 ne
 - Metrics history is in memory (last hour); lost on restart.
 - Demo Mode workers run as subprocesses of the server, so on a small free instance they compete with it for CPU.
 - Image batch sends files inside JSON (base64): at most 50 images, 5 MB each, 25 MB per job. Results are kept in memory and lost on restart; download them soon after the job ends.
-- The executable is built per OS in CI; I could only run the Linux build myself. Windows and macOS builds are untested by hand.
+- The executable is built per OS in CI; I could only run the Linux build myself. The CI run (build-client, `workflow_dispatch`) built all three; Windows and macOS executables have not been launched by hand.
 - One task per worker at a time; a single shared access key, no per-user accounts; reads, `/ws/events` and Demo Mode are open by design so the public demo works.
 - Not load-tested beyond a handful of local workers.
 
