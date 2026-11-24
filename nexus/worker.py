@@ -26,8 +26,9 @@ def sensors() -> dict:
     return m
 
 
-async def run_session(url: str, wid: str, name: str, delay: float, log):
-    async with websockets.connect(url, max_size=2**24, ping_interval=None) as ws:
+async def run_session(url: str, wid: str, name: str, delay: float, log, key: str = ""):
+    headers = {"X-API-Key": key} if key else None
+    async with websockets.connect(url, max_size=2**24, ping_interval=None, additional_headers=headers) as ws:
         await ws.send(json.dumps({"t": "hello", "worker_id": wid, "name": name, "cpus": os.cpu_count() or 1}))
         welcome = json.loads(await ws.recv())
         log(f"connected, server heartbeat timeout {welcome.get('heartbeat_timeout')}s")
@@ -55,11 +56,11 @@ async def run_session(url: str, wid: str, name: str, delay: float, log):
             hb.cancel()
 
 
-async def main_async(url, name, wid, delay, log=print):
+async def main_async(url, name, wid, delay, log=print, key=""):
     backoff = 1.0
     while True:
         try:
-            await run_session(url, wid, name, delay, log)
+            await run_session(url, wid, name, delay, log, key)
             backoff = 1.0
         except (OSError, websockets.WebSocketException) as e:
             log(f"connection lost ({type(e).__name__}); retry in {backoff:.0f}s")
@@ -71,6 +72,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default=os.environ.get("NEXUS_URL", "ws://localhost:8000/ws/worker"))
     ap.add_argument("--name", default=platform.node())
+    ap.add_argument("--key", default=os.environ.get("NEXUS_API_KEY", ""), help="server access key (X-API-Key)")
     ap.add_argument("--id", default=None, help="stable worker id (default: random per start)")
     ap.add_argument("--delay", type=float, default=float(os.environ.get("WORKER_DELAY", "0")),
                     help="artificial extra seconds per task (demo/tests)")
@@ -78,7 +80,7 @@ def main():
     psutil.cpu_percent(None)
     log = lambda s: print(f"[{a.name}] {s}", flush=True)
     try:
-        asyncio.run(main_async(a.url, a.name, a.id or uuid.uuid4().hex[:8], a.delay, log))
+        asyncio.run(main_async(a.url, a.name, a.id or uuid.uuid4().hex[:8], a.delay, log, a.key))
     except KeyboardInterrupt:
         pass
 

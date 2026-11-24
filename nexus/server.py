@@ -1,7 +1,9 @@
 """FastAPI app: REST API, worker WebSocket, event WebSocket. Run: uvicorn nexus.server:app"""
 import asyncio
+import collections
 import json
 import os
+import secrets
 import time
 from contextlib import asynccontextmanager
 
@@ -9,7 +11,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel, Field
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
@@ -17,9 +21,44 @@ from .db import DB
 from .scheduler import Scheduler
 
 START = time.time()
+DESCRIPTION = """Distributed computing server: jobs are split into tasks, handed to connected workers, results are collected.
+
+**Access key.** If the server runs with `NEXUS_API_KEY`, endpoints that change state (`POST/DELETE /api/jobs`)
+and the worker WebSocket require the header `X-API-Key`. Read-only endpoints, `/ws/events` and Demo Mode stay open.
+Click *Authorize* to try protected calls here. WebSocket protocols are described in `docs/API.md`."""
+key_header = APIKeyHeader(name="X-API-Key", auto_error=False, description="Required when the server sets NEXUS_API_KEY")
 
 
-def create_app(db_path: str | None = None, heartbeat_timeout: float | None = None) -> FastAPI:
+class JobCreate(BaseModel):
+    type: str = Field("mandelbrot", description="Task type: `mandelbrot`")
+    params: dict = Field(default_factory=dict, description="Type-specific parameters (see docs/API.md)")
+    priority: int = Field(0, description="Higher runs first")
+    model_config = {"json_schema_extra": {"examples": [
+        {"type": "mandelbrot", "params": {"width": 800, "height": 600, "tile": 100, "max_iter": 200}, "priority": 0}]}}
+
+
+class Job(BaseModel):
+    id: int
+    type: str
+    params: dict
+    priority: int
+    state: str = Field(description="running | done | failed | aborted")
+    total: int = Field(description="number of tasks (tiles)")
+    done: int
+    created: float
+    finished: float | None = None
+    error: str | None = None
+
+
+def create_app(db_path: str | None = None, heartbeat_timeout: float | None = None,
+               api_key: str | None = None) -> FastAPI:
+    api_key = os.environ.get("NEXUS_API_KEY", "") if api_key is None else api_key
+    history: collections.deque = collections.deque(maxlen=3600)    # one point per second, last hour
+    last_demo = [0.0]
+
+    def require_key(k: str | None = Depends(key_header)):
+        if api_key and not secrets.compare_digest((k or "").encode(), api_key.encode()):
+            raise HTTPException(401, "missing or invalid X-API-Key")
     db_path = db_path or os.environ.get("NEXUS_DB", "nexus.db")
     timeout = heartbeat_timeout or float(os.environ.get("HEARTBEAT_TIMEOUT", "5"))
     subscribers: set[asyncio.Queue] = set()
@@ -34,9 +73,13 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
     sched = Scheduler(DB(db_path), timeout, emit)
 
     async def reaper():
+        n = 0
         while True:
             await asyncio.sleep(0.5)
             sched.reap()
+            n += 1
+            if n % 2 == 0:
+                history.append(sched.sample())
 
     demo_procs: dict[str, subprocess.Popen] = {}     # workers spawned by Demo Mode, by worker id
 
@@ -48,28 +91,29 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
         for p in demo_procs.values():
             p.kill()
 
-    app = FastAPI(title="Nexus Grid", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="Nexus Grid API", version="0.3.0", description=DESCRIPTION, lifespan=lifespan)
     app.state.sched = sched
 
     # ---- REST ----
-    @app.get("/api/health")
+    @app.get("/api/health", tags=["system"], summary="Liveness check")
     async def health():
         alive = sum(1 for w in sched.workers.values() if w.alive)
         return {"status": "ok", "uptime_s": round(time.time() - START, 1), "workers_alive": alive}
 
-    @app.post("/api/jobs", status_code=201)
-    async def create_job(body: dict = Body(..., examples=[{"type": "mandelbrot", "params": {"width": 800, "height": 600}}])):
+    @app.post("/api/jobs", status_code=201, response_model=Job, tags=["jobs"], summary="Submit a job",
+              dependencies=[Depends(require_key)])
+    async def create_job(body: JobCreate):
         try:
-            return sched.submit(body.get("type", "mandelbrot"), body.get("params", {}), int(body.get("priority", 0)))
+            return sched.submit(body.type, body.params, body.priority)
         except (ValueError, TypeError) as e:
             raise HTTPException(422, str(e))
 
-    @app.get("/api/jobs")
+    @app.get("/api/jobs", response_model=list[Job], tags=["jobs"], summary="List jobs, newest first")
     async def list_jobs(limit: int = 100):
         return [sched.job_public(sched.jobs[j["id"]]) if j["id"] in sched.jobs else j
                 for j in sched.db.list_jobs(limit)]
 
-    @app.get("/api/jobs/{jid}")
+    @app.get("/api/jobs/{jid}", response_model=Job, tags=["jobs"], summary="Get one job")
     async def get_job(jid: int):
         j = sched.jobs.get(jid)
         j = sched.job_public(j) if j else sched.db.get_job(jid)
@@ -77,13 +121,13 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
             raise HTTPException(404, "job not found")
         return j
 
-    @app.delete("/api/jobs/{jid}")
+    @app.delete("/api/jobs/{jid}", tags=["jobs"], summary="Cancel and delete a job", dependencies=[Depends(require_key)])
     async def delete_job(jid: int):
         if not sched.cancel(jid):
             raise HTTPException(404, "job not found")
         return {"deleted": jid}
 
-    @app.get("/api/jobs/{jid}/tiles")
+    @app.get("/api/jobs/{jid}/tiles", tags=["jobs"])
     async def job_tiles(jid: int):
         """Finished tiles of a job: task id, tile coordinates, worker."""
         j = sched.jobs.get(jid)
@@ -94,7 +138,7 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
                  "worker_id": sched.tasks[t].worker_id}
                 for t in j["task_ids"] if sched.tasks[t].state == "done"]
 
-    @app.get("/api/tiles/{task_id}", response_class=Response)
+    @app.get("/api/tiles/{task_id}", response_class=Response, tags=["jobs"])
     async def tile(task_id: int):
         """One tile as the binary result frame (format in docs/ARCHITECTURE.md)."""
         t = sched.tasks.get(task_id)
@@ -102,21 +146,30 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
             raise HTTPException(404, "tile not available")
         return Response(t.result, media_type="application/octet-stream")
 
-    @app.get("/api/workers")
+    @app.get("/api/workers", tags=["workers"], summary="Connected and recently lost workers")
     async def workers():
         return [w.public() for w in sched.workers.values()]
 
-    @app.get("/api/metrics")
+    @app.get("/api/metrics", tags=["metrics"], summary="Current cluster metrics")
     async def metrics():
         ws = list(sched.workers.values())
         return {"workers_alive": sum(w.alive for w in ws), "workers_total": len(ws),
                 "queue_depth": sched.queue_depth(), "tasks_per_s": round(sched.throughput(), 2),
                 "jobs_running": sum(1 for j in sched.jobs.values() if j["state"] == "running")}
 
+    @app.get("/api/metrics/history", tags=["metrics"], summary="Per-second metrics history")
+    async def metrics_history(seconds: int = 300):
+        """Points from the last `seconds` (max 3600): queue depth, tasks/s and per-worker cpu, temp (or memory %), throughput, latency."""
+        cut = time.time() - min(max(seconds, 1), 3600)
+        return [p for p in history if p["t"] >= cut]
+
     # ---- Demo Mode (local workers started by the server, for a one-click demonstration) ----
-    @app.post("/api/demo")
+    @app.post("/api/demo", tags=["demo"])
     async def demo(request: Request, workers: int = 4):
         """Start up to `workers` local demo workers (max 8) and submit a Mandelbrot job."""
+        if time.monotonic() - last_demo[0] < 3:
+            raise HTTPException(429, "demo was started a moment ago")
+        last_demo[0] = time.monotonic()
         port = os.environ.get("PORT") or request.url.port or 8000
         for wid, p in list(demo_procs.items()):
             if p.poll() is not None:
@@ -131,7 +184,7 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
                                           "cx": -0.7436, "cy": 0.1318, "view_w": 0.02})
         return {"workers": sorted(demo_procs), "job": job}
 
-    @app.post("/api/workers/{wid}/kill")
+    @app.post("/api/workers/{wid}/kill", tags=["demo"])
     async def kill_worker(wid: str):
         """Kill a Demo Mode worker process (to show failover). Only workers started by /api/demo."""
         p = demo_procs.get(wid)
@@ -143,6 +196,9 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
     # ---- WebSockets ----
     @app.websocket("/ws/worker")
     async def ws_worker(ws: WebSocket):
+        if api_key and not secrets.compare_digest(ws.headers.get("x-api-key", "").encode(), api_key.encode()):
+            await ws.close(1008)                      # rejected during the handshake (HTTP 403)
+            return
         await ws.accept()
         w = None
         try:

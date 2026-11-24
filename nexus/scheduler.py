@@ -37,6 +37,8 @@ class Worker:
     task_id: int | None = None
     done: int = 0
     metrics: dict = field(default_factory=dict)
+    done_times: list = field(default_factory=list)
+    last_latency_ms: int = 0
 
     def public(self) -> dict:
         return {"id": self.id, "name": self.name, "alive": self.alive, "busy": self.task_id is not None,
@@ -186,6 +188,8 @@ class Scheduler:
             return                                 # stale result from a reassigned/cancelled task
         t.state, t.result = "done", frame
         w.task_id, w.done = None, w.done + 1
+        w.done_times.append(time.monotonic())
+        w.last_latency_ms = round((time.monotonic() - t.assigned_at) * 1000)
         self.completed_times.append(time.monotonic())
         job = self.jobs[t.job_id]
         job["done"] += 1
@@ -216,6 +220,19 @@ class Scheduler:
             self.emit({"e": "job_failed", "job": self.job_public(job)})
 
     # ---- stats ----
+    def sample(self) -> dict:
+        """One point of metrics history (taken once per second by the server)."""
+        mono = time.monotonic()
+        ws = {}
+        for w in self.workers.values():
+            if not w.alive:
+                continue
+            w.done_times = [x for x in w.done_times if mono - x < 5]
+            ws[w.id] = {"cpu": w.metrics.get("cpu", 0), "temp": w.metrics.get("temp", w.metrics.get("mem", 0)),
+                        "tp": len(w.done_times) / 5, "lat": w.last_latency_ms}
+        return {"t": round(time.time(), 1), "queue": self.queue_depth(), "tasks_per_s": round(self.throughput(), 2),
+                "workers_alive": len(ws), "workers": ws}
+
     def throughput(self, window: float = 10.0) -> float:
         cut = time.monotonic() - window
         self.completed_times = [x for x in self.completed_times if x > cut]
