@@ -1,0 +1,30 @@
+name: build-client
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+    paths: ["nexus/**", "client.py", "tools/build_client.sh", "requirements*.txt", ".github/workflows/build-client.yml"]
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q tests/test_core.py tests/test_image.py
+        if: matrix.os == 'ubuntu-latest'
+      - shell: bash
+        run: PYTHON=python tools/build_client.sh
+      - if: runner.os != 'Windows'
+        run: mv dist/nexus-worker dist/nexus-worker-${{ runner.os }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nexus-worker-${{ matrix.os }}
+          path: dist/*
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with: { files: "dist/*" }
