@@ -270,6 +270,7 @@ function onEvent(e) {
       const alive = [...workers.values()].filter(x => x.alive);
       e.requeued.forEach((_, i) => { const t = alive[i % Math.max(alive.length, 1)]; if (t) pulse(w, t, "#f85149"); });
       break; }
+    case "worker_removed": workers.delete(e.worker_id); break;     // dead for over a minute: drop node and lines
     case "task_assigned": {
       const w = workers.get(e.worker_id); if (w) { w.busy = true; pulse(serverPt(), w, w.color); }
       break; }

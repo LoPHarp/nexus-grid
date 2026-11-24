@@ -185,6 +185,7 @@ class Scheduler:
                 self.worker_lost(w.id, "heartbeat timeout")
             elif not w.alive and t - w.last_seen > 60:
                 del self.workers[w.id]
+                self.emit({"e": "worker_removed", "worker_id": w.id})
 
     def task_done(self, w: Worker, task_id: int, frame: bytes):
         t = self.tasks.get(task_id)

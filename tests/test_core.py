@@ -141,3 +141,15 @@ def test_cancel_job():
         assert s.cancel(job["id"]) and not s.cancel(job["id"])
         assert s.queue_depth() == 0
     run(go())
+
+
+def test_dead_worker_is_removed_after_a_minute_and_event_emitted():
+    async def go():
+        events = []
+        s = Scheduler(DB(":memory:"), heartbeat_timeout=0.2, emit=events.append)
+        w = s.worker_hello("a", "a", 1, Fake().send)
+        s.worker_lost("a", "x")
+        w.last_seen -= 61
+        s.reap()
+        assert "a" not in s.workers and {"e": "worker_removed", "worker_id": "a"} in events
+    run(go())
