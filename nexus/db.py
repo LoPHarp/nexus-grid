@@ -39,6 +39,9 @@ class DB:
         return [self._row(r) for r in
                 self.c.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,))]
 
+    def count_done(self) -> int:
+        return self.c.execute("SELECT COUNT(*) FROM jobs WHERE state='done'").fetchone()[0]
+
     def delete_job(self, jid: int):
         self.c.execute("DELETE FROM jobs WHERE id=?", (jid,))
         self.c.commit()

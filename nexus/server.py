@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, Field
 from fastapi.responses import Response
@@ -25,6 +26,7 @@ from .scheduler import Scheduler
 from .tasks import image
 
 START = time.time()
+STARS = ["Atlas", "Nova", "Orion", "Vega", "Lyra", "Draco", "Cygnus", "Pyxis"]
 DESCRIPTION = """Distributed computing server: jobs are split into tasks, handed to connected workers, results are collected.
 
 **Access key.** If the server runs with `NEXUS_API_KEY`, endpoints that change state (`POST/DELETE /api/jobs`)
@@ -97,6 +99,9 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
 
     app = FastAPI(title="Nexus Grid API", version="0.3.0", description=DESCRIPTION, lifespan=lifespan)
     app.state.sched = sched
+    # the desktop client loads the page from local files and calls this API cross-origin; auth is a header, not a cookie
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+                       expose_headers=["Content-Disposition"])
 
     # ---- REST ----
     @app.get("/api/health", tags=["system"], summary="Liveness check")
@@ -183,7 +188,8 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
         ws = list(sched.workers.values())
         return {"workers_alive": sum(w.alive for w in ws), "workers_total": len(ws),
                 "queue_depth": sched.queue_depth(), "tasks_per_s": round(sched.throughput(), 2),
-                "jobs_running": sum(1 for j in sched.jobs.values() if j["state"] == "running")}
+                "jobs_running": sum(1 for j in sched.jobs.values() if j["state"] == "running"),
+                "jobs_done": sched.db.count_done()}
 
     @app.get("/api/metrics/history", tags=["metrics"], summary="Per-second metrics history")
     async def metrics_history(seconds: int = 300):
@@ -204,10 +210,11 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
                 del demo_procs[wid]
         for i in range(1, min(max(workers, 1), 8) + 1):
             wid = f"demo{i}"
+            label = f"{STARS[(i - 1) % len(STARS)]}-{i:02d}"
             if wid not in demo_procs:
                 demo_procs[wid] = subprocess.Popen(
                     [sys.executable, "-m", "nexus.worker", "--url", f"ws://127.0.0.1:{port}/ws/worker",
-                     "--name", wid, "--id", wid, "--delay", "0.3"], stdout=subprocess.DEVNULL)
+                     "--name", label, "--id", wid, "--delay", "0.3"], stdout=subprocess.DEVNULL)
         job = sched.submit("mandelbrot", {"width": 640, "height": 480, "tile": 40, "max_iter": 200,
                                           "cx": -0.7436, "cy": 0.1318, "view_w": 0.02})
         return {"workers": sorted(demo_procs), "job": job}

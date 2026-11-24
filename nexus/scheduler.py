@@ -237,8 +237,9 @@ class Scheduler:
             w.done_times = [x for x in w.done_times if mono - x < 5]
             ws[w.id] = {"cpu": w.metrics.get("cpu", 0), "temp": w.metrics.get("temp", w.metrics.get("mem", 0)),
                         "tp": len(w.done_times) / 5, "lat": w.last_latency_ms}
+        lats = [v["lat"] for v in ws.values() if v["lat"]]
         return {"t": round(time.time(), 1), "queue": self.queue_depth(), "tasks_per_s": round(self.throughput(), 2),
-                "workers_alive": len(ws), "workers": ws}
+                "latency_ms": round(sum(lats) / len(lats)) if lats else 0, "workers_alive": len(ws), "workers": ws}
 
     def throughput(self, window: float = 10.0) -> float:
         cut = time.monotonic() - window

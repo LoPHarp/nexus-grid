@@ -25,7 +25,7 @@ def split(params: dict) -> list[dict]:
     tiles = []
     for ty, py in enumerate(range(0, p["height"], p["tile"])):
         for tx, px in enumerate(range(0, p["width"], p["tile"])):
-            tiles.append({"tx": tx, "ty": ty, "px": px, "py": py,
+            tiles.append({"n": len(tiles) + 1, "tx": tx, "ty": ty, "px": px, "py": py,
                           "w": min(p["tile"], p["width"] - px), "h": min(p["tile"], p["height"] - py),
                           "x0": x_left + px * step, "y0": y_top - py * step, "step": step,
                           "max_iter": p["max_iter"]})
@@ -53,3 +53,15 @@ def compute(t: dict) -> np.ndarray:
 
 def pack(task_id: int, result: np.ndarray) -> bytes:
     return pack_result(task_id, result)
+
+
+def preview(arr: np.ndarray, t: dict) -> dict:
+    """Small RGBA preview of a computed tile (desktop window); same palette as the dashboard, inside = black."""
+    import base64
+    ph = (np.arange(256) / 255.0)[:, None] * 3 + np.array([0.0, 0.33, 0.66])[None, :]
+    lut = (255 * (0.5 + 0.5 * np.sin(6.28 * ph))).astype(np.uint8)
+    rgba = np.empty(arr.shape + (4,), dtype=np.uint8)
+    rgba[..., :3] = lut[(arr.astype(np.uint32) * 255 // 64) & 255]
+    rgba[..., 3] = 255
+    rgba[arr >= t["max_iter"], :3] = 0
+    return {"w": arr.shape[1], "h": arr.shape[0], "rgba": base64.b64encode(rgba.tobytes()).decode()}

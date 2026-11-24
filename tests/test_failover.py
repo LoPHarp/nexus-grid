@@ -90,7 +90,7 @@ def test_worker_reconnects_after_server_restart(procs, tmp_path):
 def test_dashboard_and_demo_endpoint(procs):
     port, spawn = procs
     html = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5).read().decode()
-    assert "NEXUS GRID" in html
+    assert "<title>Nexus Grid</title>" in html and "app.js" in html
     # demo workers are real processes started by the server; a killed one is reported dead
     res = call(port, "/api/demo?workers=2", "POST")
     assert res["workers"] == ["demo1", "demo2"] and res["job"]["total"] == 192

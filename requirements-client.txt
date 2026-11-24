@@ -1,0 +1,5 @@
+-r requirements.txt
+pywebview==6.2.1
+PyQt6==6.12.1; sys_platform == "linux"
+PyQt6-WebEngine==6.140.1; sys_platform == "linux"
+QtPy==2.4.3; sys_platform == "linux"
