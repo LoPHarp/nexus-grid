@@ -298,7 +298,7 @@ select:focus, input:focus { background:var(--bg-surface-2); border-color:var(--b
 @keyframes wave { from { background-position:200% 0; } to { background-position:-200% 0; } }
 body.loading .card, body.loading .panel { background:linear-gradient(90deg,#11192E 25%,#1C2744 50%,#11192E 75%); background-size:200% 100%; animation:wave 1500ms ease-in-out infinite; border-color:transparent; }
 body.loading .card > *, body.loading .panel > *, body.loading .tile { visibility:hidden; }
-.stg { animation:stg 280ms var(--ease-out) both; animation-delay:var(--d, 0ms); }
+.stg { animation:stg 280ms var(--ease-out) backwards; animation-delay:var(--d, 0ms); }
 @keyframes stg { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
 
 /* ---------- reduced motion ---------- */
@@ -314,3 +314,9 @@ body.rm .link.dead { animation:none; }
 body.rm .tile.active::before { content:"COMPUTING"; position:absolute; inset:0; display:grid; place-items:center; font:700 5.5px var(--font-ui); letter-spacing:.04em; color:var(--wc); z-index:2; }
 .tile .idx { z-index:1; }
 @media (max-width: 959px) { #graph { min-height:250px; } }
+
+/* views are never display:none (keeps layout, graph size and layers alive while another view is shown) */
+#app { position:relative; }
+#observer.view-off, #myworker.view-off { position:absolute; left:0; right:0; top:0; height:0; overflow:hidden; visibility:hidden; pointer-events:none; }
+.node.demo { cursor:pointer; } .node.demo .pill:hover { border-color:var(--status-failed); box-shadow:var(--glow-red); }
+.wrow.kill { cursor:pointer; } .wrow.kill:hover > * { background:rgba(239,68,68,.10); }

@@ -51,7 +51,7 @@ function upsertWorker(w) {
     v = { id: w.id, color: colorFor(w.id), hist: { cpu: [], mem: [], temp: [], tp: [], lat: [] }, doneTimes: [], lat: 0, lastSeen: performance.now(), lostAt: 0, lostAfter: 0 };
     S.workers.set(w.id, v);
   }
-  Object.assign(v, { name: w.name, alive: w.alive, busy: w.busy, done: w.done || v.done || 0, metrics: w.metrics || v.metrics || {} });
+  Object.assign(v, { name: w.name, alive: w.alive, busy: w.busy, demo: !!w.demo, done: w.done || v.done || 0, metrics: w.metrics || v.metrics || {} });
   return v;
 }
 const aliveWorkers = () => [...S.workers.values()].filter(w => w.alive);
@@ -269,6 +269,7 @@ async function decodeTile(buf, max) {
 const LUT = (() => { const a = new Uint8ClampedArray(768); for (let i = 0; i < 256; i++) for (let k = 0; k < 3; k++) a[i * 3 + k] = 255 * (0.5 + 0.5 * Math.sin(6.28 * (i / 255 * 3 + k * 0.33))); return a; })();
 async function loadTile(taskId, i, job) {
   if (job.type !== "mandelbrot") return;
+  const t0 = S.tiles[i]; if (t0) { t0.taskId = taskId; t0.tries = (t0.tries || 0) + 1; t0.doneAt = performance.now(); }
   try {
     const r = await fetch(apiUrl(`/api/tiles/${taskId}`)); if (!r.ok) return;
     const img = await decodeTile(await r.arrayBuffer(), S.geo.max);
@@ -278,10 +279,25 @@ async function loadTile(taskId, i, job) {
     t.canvas.width = img.width; t.canvas.height = img.height; t.canvas.getContext("2d").putImageData(img, 0, 0);
   } catch (e) { console.warn("tile", e); }
 }
+/* Idempotent repair: the picture is always derived from state, so a skipped event or a view switch cannot leave it stale. */
+function reconcileTiles() {
+  const j = S.job; if (!j) return;
+  S.tiles.forEach(t => {
+    const el = t.el;
+    for (const c of ["active", "orphan", "done"]) { const on = t.state === c; if (el.classList.contains(c) !== on) el.classList.toggle(c, on); }
+    const wk = t.worker && S.workers.get(t.worker); if (wk) el.style.setProperty("--wc", wk.color);
+    if (t.state === "done" && !t.canvas && t.taskId && j.type === "mandelbrot" && t.tries < 4 && performance.now() - t.doneAt > 1500) loadTile(t.taskId, +el.dataset.i, j);
+  });
+  updateMosaicTitle();
+}
 function newJob(j) {
   S.job = { id: j.id, type: j.type, total: j.total, done: j.done, state: j.state, priority: j.priority || 0, params: j.params, lastDec: 0 };
   S.job.lastDec = Math.floor(10 * j.done / Math.max(j.total, 1));
   buildMosaic(S.job); renderJob();
+}
+async function followJob(id) {
+  S.switching = true;
+  try { const r = await fetch(apiUrl(`/api/jobs/${id}`)); if (r.ok) await restoreJob(await r.json()); } catch (e) {} finally { S.switching = false; }
 }
 async function restoreJob(j) {
   newJob(j);
@@ -299,10 +315,30 @@ mosaic.addEventListener("mousemove", ev => {
   tip.style.left = Math.min(ev.clientX + 14, innerWidth - 180) + "px"; tip.style.top = ev.clientY + 14 + "px"; tip.classList.add("on");
 });
 mosaic.addEventListener("mouseleave", () => $("#tip").classList.remove("on"));
+const blobB64 = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
+async function saveBlob(name, blob) {
+  if (S.desktop) {                                        // pywebview blocks anchor downloads: native save dialog via Python
+    try {
+      const r = await S.desktop.save_file(name, await blobB64(blob));
+      toast(r.ok ? `Saved ${r.path}` : r.cancelled ? "Save cancelled" : `Save failed: ${r.error}`);
+    } catch (e) { toast("Save failed: " + e); }
+    return;
+  }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000); toast(`Downloading ${name}`);
+}
 function composePNG() {
-  const j = S.job, c = document.createElement("canvas"); c.width = S.geo.w; c.height = S.geo.h; const x = c.getContext("2d");
+  const j = S.job; if (!j || j.type !== "mandelbrot" || !S.geo.w) return toast("Nothing to save yet");
+  const c = document.createElement("canvas"); c.width = S.geo.w; c.height = S.geo.h; const x = c.getContext("2d");
+  x.fillStyle = "#050811"; x.fillRect(0, 0, c.width, c.height);
   S.tiles.forEach((t, i) => { if (t.canvas) x.drawImage(t.canvas, (i % S.geo.cols) * S.geo.tile, Math.floor(i / S.geo.cols) * S.geo.tile); });
-  c.toBlob(b => { const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `mandelbrot-job${j.id}.png`; a.click(); });
+  c.toBlob(b => b ? saveBlob(`mandelbrot-job${j.id}.png`, b) : toast("Could not create the image"));
+}
+async function downloadZip() {
+  const j = S.job; const url = apiUrl(`/api/jobs/${j.id}/download`);
+  if (!S.desktop) { location.href = url; toast(`Downloading job${j.id}.zip`); return; }
+  try { const r = await fetch(url); if (!r.ok) throw new Error("HTTP " + r.status); await saveBlob(`job${j.id}.zip`, await r.blob()); }
+  catch (e) { toast("Download failed: " + e.message); }
 }
 
 /* ---------- fly helper (WAAPI, transform only) ---------- */
@@ -313,7 +349,9 @@ function fly(parent, fn, dur, color, size, { delay = 0, easing = "linear", scale
   Object.assign(d.style, { width: size + "px", height: size + "px", background: color, boxShadow: `0 0 ${glow}px ${color}` });
   parent.append(d);
   const kf = []; for (let k = 0; k <= 20; k++) { const t = k / 20, p = fn(t), s = scale ? scale(t) : 1; kf.push({ transform: `translate(${p.x - size / 2}px,${p.y - size / 2}px) scale(${s})`, opacity: 1 }); }
-  const a = d.animate(kf, { duration: dur, delay, easing, fill: "both" }); a.onfinish = () => d.remove();
+  const a = d.animate(kf, { duration: dur, delay, easing, fill: "both" });
+  let gone = false; const rm = () => { if (!gone) { gone = true; d.remove(); } };
+  a.onfinish = rm; a.oncancel = rm; setTimeout(rm, dur + delay + 200);      // timer fallback: never leak dots
 }
 
 /* ---------- graph ---------- */
@@ -354,7 +392,7 @@ function renderGraph() {
     let n = $(`#n-${CSS.escape(w.id)}`);
     if (!n) { n = document.createElement("div"); n.className = "node"; n.id = "n-" + w.id; n.innerHTML = `<div class="pill"><i></i><span class="nm"></span><span class="pct">0%</span><span class="offline">OFFLINE</span></div>`; nodes.append(n); }
     const p = G.pos.get(w.id); n.style.left = p.x + "px"; n.style.top = p.y + "px"; n.style.setProperty("--wc", w.color);
-    $(".nm", n).textContent = w.name; n.classList.toggle("dead", !w.alive);
+    $(".nm", n).textContent = w.name; n.classList.toggle("dead", !w.alive); n.classList.toggle("demo", !!w.demo && w.alive);
     $(".pct", n).textContent = Math.round((w.metrics && w.metrics.cpu) || 0) + "%";
   }
   $$(".node", nodes).forEach(n => { if (n.id !== "n-server" && !seen.has(n.id.slice(2))) n.remove(); });
@@ -396,13 +434,33 @@ function reassignFx(deadW, tileIdx) {
   });
 }
 
+/* ---------- kill a demo worker (graph node or list row) ---------- */
+async function killWorker(id) {
+  const w = S.workers.get(id); if (!w || !w.alive) return;
+  if (!w.demo) { toast(`${w.name} is a real worker and cannot be killed here`); return; }
+  try {
+    const r = await fetch(apiUrl(`/api/workers/${encodeURIComponent(id)}/kill`), { method: "POST" });
+    toast(r.ok ? `Killed ${w.name} (demo)` : `Could not kill ${w.name}: ${r.status}`);
+  } catch (e) { toast("Kill failed: " + e.message); }
+}
+function killTarget(ev) {
+  const el = ev.target.closest(".node.demo, .wrow.kill"); if (!el) return null;
+  return el.classList.contains("node") ? el.id.slice(2) : el.dataset.id;
+}
+for (const root of [$("#nodes"), $("#wlist")]) {
+  root.addEventListener("click", ev => { const id = killTarget(ev); if (id) killWorker(id); });
+  root.addEventListener("mousemove", ev => { const id = killTarget(ev), tip = $("#tip"); if (!id) { if (tip.dataset.k) { tip.classList.remove("on"); tip.dataset.k = ""; } return; }
+    tip.textContent = "Click to kill (demo)"; tip.dataset.k = "1"; tip.style.left = Math.min(ev.clientX + 14, innerWidth - 190) + "px"; tip.style.top = ev.clientY + 14 + "px"; tip.classList.add("on"); });
+  root.addEventListener("mouseleave", () => { $("#tip").classList.remove("on"); $("#tip").dataset.k = ""; });
+}
+
 /* ---------- workers list, feed, ticker ---------- */
 const HB_SVG = `<svg viewBox="0 0 24 24"><use href="#i-bolt"/></svg>`;
 function renderWorkers() {
   const l = $("#wlist"); let h = `<div class="h">Status</div><div class="h">Load</div><div class="h">Tasks</div><div class="h">Heartbeat</div>`;
   for (const w of S.workers.values()) {
     const cpu = Math.min(100, Math.round((w.metrics && w.metrics.cpu) || 0));
-    h += `<div class="wrow ${w.alive ? "" : "dead"}" style="--wc:${w.color}" data-id="${w.id}"><div class="nm"><i></i><span>${esc(w.name)}</span></div><div><div class="bar"><b style="width:${cpu}%"></b></div></div><div class="num">${w.done || 0}</div><div class="hb">${w.alive ? HB_SVG + `<span class="mono-xs">-</span>` : `${WARN_SVG}<span class="mono-xs">Lost · ${w.lostAfter.toFixed(1)}s</span>`}</div></div>`;
+    h += `<div class="wrow ${w.alive ? "" : "dead"} ${w.alive && w.demo ? "kill" : ""}" style="--wc:${w.color}" data-id="${esc(w.id)}"><div class="nm"><i></i><span>${esc(w.name)}</span></div><div><div class="bar"><b style="width:${cpu}%"></b></div></div><div class="num">${w.done || 0}</div><div class="hb">${w.alive ? HB_SVG + `<span class="mono-xs">-</span>` : `${WARN_SVG}<span class="mono-xs">Lost · ${w.lostAfter.toFixed(1)}s</span>`}</div></div>`;
   }
   l.innerHTML = h;
 }
@@ -487,10 +545,11 @@ function renderJob() {
   $("#job-type").value = j ? j.type : $("#job-type").value;
   $("#cancel").disabled = $("#cancel-inline").disabled = !run;
   $("#download").disabled = !(j && j.state === "done");
+  $("#mosaic-save").disabled = !(j && j.type === "mandelbrot" && j.done > 0);
   updateMosaicTitle();
 }
-$("#download").onclick = () => { const j = S.job; if (!j) return; if (j.type === "image") location.href = apiUrl(`/api/jobs/${j.id}/download`); else composePNG(); };
-$("#mosaic-more").onclick = () => { if (S.job && S.job.type === "mandelbrot" && S.geo.w) composePNG(); };
+$("#download").onclick = () => { const j = S.job; if (!j) return; if (j.type === "image") downloadZip(); else composePNG(); };
+$("#mosaic-save").onclick = composePNG;
 async function cancelJob() { if (!S.job) return; const r = await api(`/api/jobs/${S.job.id}`, { method: "DELETE" }); if (r.ok) toast("Job cancelled"); }
 $("#cancel").onclick = $("#cancel-inline").onclick = cancelJob;
 const SPOTS = [{ cx: -0.7436, cy: 0.1318, view_w: 0.02 }, { cx: -0.5, cy: 0, view_w: 3 }, { cx: -0.1011, cy: 0.9563, view_w: 0.05 }, { cx: -1.7497, cy: 0, view_w: 0.04 }];
@@ -527,6 +586,9 @@ function updateEmpty() {
 
 /* ---------- events ---------- */
 function onEvent(e) {
+  try { handleEvent(e); } catch (err) { diag(`event ${e && e.e} failed: ${err && err.message}`); console.error("event", e && e.e, err); }
+}
+function handleEvent(e) {
   S.lastEvent = performance.now();
   switch (e.e) {
     case "snapshot": {
@@ -542,7 +604,7 @@ function onEvent(e) {
       else { S.job.done = latest ? latest.done : S.job.done; renderJob(); }
       if (first) feed("conn", "Connected to cluster", "Connected to cluster");
       break; }
-    case "job_created": newJob(e.job); feed("prog", `Job #${e.job.id} started (${e.job.total} ${e.job.type === "image" ? "files" : "tiles"})`); break;
+    case "job_created": if (!S.job || S.job.state !== "running") newJob(e.job); feed("prog", `Job #${e.job.id} started (${e.job.total} ${e.job.type === "image" ? "files" : "tiles"})`); break;
     case "worker_joined": { const w = upsertWorker(e.worker); w.lastSeen = performance.now(); renderChips(); renderWorkers(); renderGraph(); feed("conn", `${esc(w.name)} connected`, `<b>${esc(w.name)}</b> connected`); updateEmpty(); break; }
     case "worker_lost": {
       const w = S.workers.get(e.worker_id); if (!w) break;
@@ -557,6 +619,7 @@ function onEvent(e) {
     case "worker_removed": S.workers.delete(e.worker_id); renderChips(); renderWorkers(); renderGraph(); break;
     case "task_assigned": {
       const w = S.workers.get(e.worker_id); if (w) { w.busy = true; pulse(w, "out", "#22D3EE"); }
+      if ((!S.job || e.job_id !== S.job.id) && !S.switching) followJob(e.job_id);          // show the job the cluster is actually working on
       if (S.job && e.job_id === S.job.id) {
         const idx = tileIndex(S.job, e.tile), was = S.tiles[idx] && S.tiles[idx].state;
         S.assigned.set(e.task_id, { idx, worker: e.worker_id }); setTile(idx, "active", e.worker_id);
@@ -610,16 +673,17 @@ $("#tabs .tabs").addEventListener("click", e => { const b = e.target.closest("bu
 function restagger(root) { $$(".stg", root).forEach(e => { e.classList.remove("stg"); void e.offsetWidth; e.classList.add("stg"); }); }
 function setMode(m) {
   S.mode = m; $$("#seg button").forEach(b => { b.classList.toggle("on", b.dataset.mode === m); b.setAttribute("aria-selected", b.dataset.mode === m); });
-  $("#observer").hidden = m !== "observer"; $("#myworker").hidden = m !== "worker";
-  restagger($(m === "observer" ? "#observer" : "#myworker")); updateEmpty(); if (m === "observer") requestAnimationFrame(renderGraph);
+  $("#observer").classList.toggle("view-off", m !== "observer"); $("#myworker").classList.toggle("view-off", m !== "worker");
+  restagger($(m === "observer" ? "#observer" : "#myworker")); updateEmpty();
+  if (m === "observer") { renderGraph(); renderWorkers(); renderChips(); drawCharts(); reconcileTiles(); requestAnimationFrame(renderGraph); }
 }
 $("#seg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setMode(b.dataset.mode); });
 
 /* ---------- key, settings ---------- */
-const maskKey = k => k ? "•".repeat(7) + k.slice(-4) : "not set";
-function renderKey() { $("#key-mask").textContent = S.keyShown ? (S.key || "not set") : maskKey(S.key); $("#c-key").value = S.key; }
+const maskKey = k => k ? "•".repeat(7) + k.slice(-4) : "none";
+function renderKey() { $("#key-mask").textContent = S.keyShown ? (S.key || "none") : maskKey(S.key); $("#c-key").value = S.key; }
 $("#key-eye").onclick = () => { S.keyShown = !S.keyShown; renderKey(); };
-$("#key-copy").onclick = () => S.key ? copyText(S.key) : toast("No API key set");
+$("#key-copy").onclick = () => S.key ? copyText(S.key) : toast("No API key set (not needed on an open server)");
 const openModal = () => { $("#m-url").value = S.base; $("#m-key").value = S.key; $("#modal").hidden = false; $("#m-key").focus(); };
 $("#settings-btn").onclick = $("#b-key").onclick = openModal;
 $("#m-cancel").onclick = () => $("#modal").hidden = true;
@@ -715,10 +779,10 @@ function boot() {
   buildMosaic(null); buildCharts(); renderJob(); applyLayout(); renderGraph(); renderWorkers(); renderHud();
   window.addEventListener("pywebviewready", initDesktop);
   if (window.pywebview && window.pywebview.api) initDesktop();
-  setInterval(pollMetrics, 500); setInterval(sampleHud, 1000); setInterval(sampleWorkers, 1000); setInterval(tickHeartbeat, 200);
+  setInterval(reconcileTiles, 500); setInterval(pollMetrics, 500); setInterval(sampleHud, 1000); setInterval(sampleWorkers, 1000); setInterval(tickHeartbeat, 200);
   startConn();
 }
-window.__probe = () => ({ conn: $("#conn-text").textContent, mode: S.mode, compact: compact(), banner: $("#banner").hidden ? null : $("#banner-code").textContent,
+window.__probe = () => ({ base: S.base, conn: $("#conn-text").textContent, mode: S.mode, compact: compact(), banner: $("#banner").hidden ? null : $("#banner-code").textContent,
   sleeping: !$("#sleep").hidden, empty: !$("#empty").hidden, workers: S.workers.size, alive: aliveWorkers().length, job: S.job && { id: S.job.id, done: S.job.done, total: S.job.total },
   tilesDone: S.tiles.filter(t => t.state === "done").length, hud: { ...S.m }, badge: $("#c-badge").textContent, desktop: !!S.desktop, feed: $$("#feed .tx").slice(0, 4).map(e => e.textContent) });
 boot();

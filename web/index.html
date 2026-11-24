@@ -22,7 +22,7 @@
   <span class="grow pywebview-drag-region" style="height:100%"></span>
   <div class="seg" id="seg" role="tablist"><button data-mode="observer" class="on" role="tab">Observer</button><button data-mode="worker" role="tab">My Worker</button></div>
   <button class="btn" id="demo-btn">Demo Mode</button>
-  <div id="keybox" title="API key"><span class="lbl">API key</span><span class="num" id="key-mask">not set</span>
+  <div id="keybox" title="API key: optional, only needed if the server sets one"><span class="lbl">API key</span><span class="num" id="key-mask">not set</span>
     <button class="icon-btn" id="key-eye" title="Reveal"><svg><use href="#i-eye"/></svg></button>
     <button class="icon-btn" id="key-copy" title="Copy"><svg><use href="#i-copy"/></svg></button></div>
   <button class="icon-btn" id="ask-btn" title="Ask the cluster"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg></button>
@@ -50,14 +50,14 @@
   <div id="cols" style="margin-top:16px">
     <div id="left">
       <section class="panel stg" id="mosaic-panel" style="--d:160ms">
-          <header><h2 id="mosaic-title">Mandelbrot Mosaic (192 Tiles)</h2><button class="more" id="mosaic-more" title="Download image">···</button></header>
+          <header><h2 id="mosaic-title">Mandelbrot Mosaic (192 Tiles)</h2><button class="btn" id="mosaic-save" style="margin-left:auto;padding:3px 10px" title="Save the mosaic as a PNG image" disabled>Save PNG</button></header>
           <div id="mosaic"></div>
           <div id="mosaic-foot"></div>
           <div class="inline-job"><div class="progress" id="prog-inline"><i></i></div><button class="btn danger" id="cancel-inline">Cancel</button><button class="btn primary" id="new-inline">New Job</button></div>
         </section>
       <div id="midcol">
         <section class="panel stg" id="graph-panel" style="--d:160ms">
-          <header><h2>Worker Graph</h2><button class="more" title="Menu">···</button></header>
+          <header><h2>Worker Graph</h2></header>
           <div id="graph"><svg class="links"><defs>
             <marker id="ah-out" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1 9 5 0 9z" fill="#22D3EE"/></marker>
             <marker id="ah-in" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 1 9 5 0 9z" fill="#8B5CF6"/></marker></defs><g id="links"></g></svg>
@@ -65,7 +65,7 @@
             <div id="nodes"></div></div>
         </section>
         <section class="panel stg" id="tele-panel" style="--d:240ms">
-        <header><h2>Per-Worker Telemetry</h2><button class="more" title="Menu">···</button></header>
+        <header><h2>Per-Worker Telemetry</h2></header>
         <div class="chips" id="chips"></div>
         <div id="charts"></div>
       </section>
@@ -80,8 +80,8 @@
         <div id="job-meta"><span id="job-prio">Priority: <b>-</b></span><span class="num" id="job-pct">0%</span></div>
         <div class="job-actions"><button class="btn danger" id="cancel">Cancel</button><button class="btn" id="download" disabled>Download</button></div>
       </section>
-      <section class="panel stg" id="workers-panel" style="--d:240ms"><header><h2>Workers</h2><button class="more" title="Menu">···</button></header><div class="wlist" id="wlist"></div></section>
-      <section class="panel stg" id="feed-panel" style="--d:240ms"><header><h2>Event Feed</h2><button class="more" title="Menu">···</button></header><div id="feed"></div></section>
+      <section class="panel stg" id="workers-panel" style="--d:240ms"><header><h2>Workers</h2></header><div class="wlist" id="wlist"></div></section>
+      <section class="panel stg" id="feed-panel" style="--d:240ms"><header><h2>Event Feed</h2></header><div id="feed"></div></section>
     </aside>
   </div>
 
@@ -94,7 +94,7 @@
     <button class="btn primary" id="e-worker">Switch to My Worker</button><button class="btn violet" id="e-demo">Launch Demo Mode</button></div></div></div>
 </section>
 
-<section id="myworker" hidden>
+<section id="myworker" class="view-off">
   <section class="panel stg" style="--d:40ms">
     <header><h2>Worker Status</h2></header>
     <div id="gauge-wrap">
@@ -116,14 +116,14 @@
       <header><h2>Connection Configuration</h2></header>
       <div class="notice" id="no-desktop" hidden>The local worker runs in the desktop client. <a id="dl-link" href="https://github.com/LoPHarp/nexus-grid/releases/latest" target="_blank" rel="noopener">Download it</a> to compute from this machine; this page still shows the whole cluster.</div>
       <div class="field"><label for="c-url">Server URL</label><input type="text" id="c-url" autocomplete="off" spellcheck="false"></div>
-      <div class="field"><label for="c-key">API Key</label><div class="wrapi"><input type="password" id="c-key" autocomplete="off" spellcheck="false"><button id="c-eye" title="Reveal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-eye"/></svg></button></div></div>
+      <div class="field"><label for="c-key">API Key (optional)</label><div class="wrapi"><input type="password" id="c-key" autocomplete="off" spellcheck="false" placeholder="optional"><button id="c-eye" title="Reveal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-eye"/></svg></button></div></div>
       <div class="field"><label for="c-name">Worker Name</label><input type="text" id="c-name" autocomplete="off"></div>
       <div class="cfgrow"><button class="btn danger" id="c-btn">Connect</button><span class="badge idle" id="c-badge">Offline</span>
         <span class="toggle" style="flex-direction:column;align-items:flex-end;gap:4px"><span>Auto-Reconnect</span><span class="row"><span class="mono-xs" id="ar-lbl">ON</span><button class="sw" id="ar" role="switch" aria-checked="true" aria-label="Auto-reconnect"></button></span></span></div>
     </section>
-    <section class="panel stg" style="--d:120ms"><header><h2>Worker Activity Log</h2><button class="more" title="Menu">···</button></header><div class="log" id="log-a"></div></section>
+    <section class="panel stg" style="--d:120ms"><header><h2>Worker Activity Log</h2></header><div class="log" id="log-a"></div></section>
   </div>
-  <section class="panel stg" id="tl-panel" style="--d:160ms"><header><h2>Worker Activity Log</h2><button class="more" title="Menu">···</button></header><div class="log tl" id="log-b"></div></section>
+  <section class="panel stg" id="tl-panel" style="--d:160ms"><header><h2>Worker Activity Log</h2></header><div class="log tl" id="log-b"></div></section>
 </section>
 </div>
 
@@ -136,7 +136,7 @@
 <div id="modal" class="glass-over" hidden><div class="callout">
   <h3>Settings</h3>
   <label for="m-url">Server URL</label><input type="text" id="m-url" autocomplete="off" spellcheck="false">
-  <label for="m-key">API key (stored on this device only)</label><input type="password" id="m-key" autocomplete="off">
+  <label for="m-key">API key (optional, stored on this device only)</label><input type="password" id="m-key" autocomplete="off">
   <div class="row" style="margin-top:20px;justify-content:flex-end"><button class="btn" id="m-diag">Copy diagnostic log</button><button class="btn" id="m-cancel">Cancel</button><button class="btn primary" id="m-save">Save</button></div></div></div>
 <div id="ask" class="glass-over" hidden><div class="callout" style="width:480px;text-align:left">
   <h3>Ask the cluster</h3>
