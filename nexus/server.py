@@ -21,6 +21,7 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from .db import DB
+from . import ai
 from .protocol import frame_payload, frame_task_id
 from .scheduler import Scheduler
 from .tasks import image
@@ -69,7 +70,13 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
     timeout = heartbeat_timeout or float(os.environ.get("HEARTBEAT_TIMEOUT", "5"))
     subscribers: set[asyncio.Queue] = set()
 
+    recent: collections.deque = collections.deque(maxlen=30)       # short event summaries for Ask the cluster
+
     def emit(event: dict):
+        e = event.get("e")
+        if e in ("worker_joined", "worker_lost", "job_created", "job_done", "job_failed", "worker_removed"):
+            who = (event.get("worker") or {}).get("name") or event.get("worker_id") or (event.get("job") or {}).get("id", "")
+            recent.append(f"{time.strftime('%H:%M:%S')} {e} {who}" + (f" ({event.get('reason')})" if event.get("reason") else ""))
         for q in list(subscribers):
             if q.qsize() > 1000:               # slow consumer: drop it rather than grow memory
                 subscribers.discard(q)
@@ -77,6 +84,8 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
                 q.put_nowait(event)
 
     sched = Scheduler(DB(db_path), timeout, emit)
+    advisor = ai.from_env(lambda: ai.snapshot(sched, recent))
+    last_ask: collections.deque = collections.deque(maxlen=30)
 
     async def reaper():
         n = 0
@@ -196,6 +205,27 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
         """Points from the last `seconds` (max 3600): queue depth, tasks/s and per-worker cpu, temp (or memory %), throughput, latency."""
         cut = time.time() - min(max(seconds, 1), 3600)
         return [p for p in history if p["t"] >= cut]
+
+    class Ask(BaseModel):
+        question: str = Field(..., max_length=ai.MAX_Q, examples=ai.SUGGESTIONS[:1])
+
+    @app.post("/api/ask", tags=["ai"], summary="Ask a question about the cluster")
+    async def ask(body: Ask):
+        """Answer from cache, a free model (if configured), recorded answers, or rules; `source` says which.
+        Limited to 30 questions per minute."""
+        now = time.monotonic()
+        while last_ask and now - last_ask[0] > 60:
+            last_ask.popleft()
+        if len(last_ask) >= 30:
+            raise HTTPException(429, "too many questions, try again in a minute")
+        last_ask.append(now)
+        if not body.question.strip():
+            raise HTTPException(422, "empty question")
+        return await asyncio.to_thread(advisor.ask, body.question)
+
+    @app.get("/api/ask/suggestions", tags=["ai"], summary="Example questions")
+    async def ask_suggestions():
+        return ai.SUGGESTIONS
 
     # ---- Demo Mode (local workers started by the server, for a one-click demonstration) ----
     @app.post("/api/demo", tags=["demo"])

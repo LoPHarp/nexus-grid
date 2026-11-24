@@ -1,0 +1,62 @@
+{
+ "3ba584068741e11a7a31a6a9": {
+  "question": "Is the cluster healthy?",
+  "state": {
+   "alive": 3,
+   "total": 4,
+   "job": "running"
+  },
+  "answer": "No, 1 of 4 workers is lost.",
+  "model": "qwen/qwen3.8-27b"
+ },
+ "7fd6dd8d3877ba5be60f1725": {
+  "question": "What happened to the last job?",
+  "state": {
+   "alive": 3,
+   "total": 4,
+   "job": "running"
+  },
+  "answer": "It is running.",
+  "model": "qwen/qwen3.8-27b"
+ },
+ "71c6263feeb62cf66a7e9f2a": {
+  "question": "Is the cluster healthy?",
+  "state": {
+   "alive": 4,
+   "total": 4,
+   "job": "done"
+  },
+  "answer": "Yes, all 4 workers are alive.",
+  "model": "qwen/qwen3.8-27b"
+ },
+ "12c1185e04dbf197474ba3f5": {
+  "question": "What happened to the last job?",
+  "state": {
+   "alive": 4,
+   "total": 4,
+   "job": "done"
+  },
+  "answer": "It is done.",
+  "model": "qwen/qwen3.8-27b"
+ },
+ "103aab86105d211bcc0eeb0e": {
+  "question": "Is the cluster healthy?",
+  "state": {
+   "alive": 3,
+   "total": 4,
+   "job": "done"
+  },
+  "answer": "No, one worker is lost, so the cluster is not fully healthy.",
+  "model": "openai/gpt-oss-safeguard-20b"
+ },
+ "afac8b002c34baeaa721cc05": {
+  "question": "What happened to the last job?",
+  "state": {
+   "alive": 3,
+   "total": 4,
+   "job": "done"
+  },
+  "answer": "It completed successfully.",
+  "model": "openai/gpt-oss-safeguard-20b"
+ }
+}

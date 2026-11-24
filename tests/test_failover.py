@@ -100,3 +100,16 @@ def test_dashboard_and_demo_endpoint(procs):
     wait_for(lambda: not {w["id"]: w for w in call(port, "/api/workers")}["demo1"]["alive"], 10, "kill not noticed")
     tile = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/tiles/1", timeout=5).read()
     assert tile[0] == 1 and len(tile) > 9                            # binary result frame
+
+
+def test_ask_endpoint_without_model_uses_recorded_or_rules(procs):
+    port, spawn = procs
+    import urllib.request
+    def ask(q):
+        r = urllib.request.Request(f"http://127.0.0.1:{port}/api/ask", method="POST", data=json.dumps({"question": q}).encode(),
+                                   headers={"Content-Type": "application/json"})
+        return json.load(urllib.request.urlopen(r, timeout=5))
+    a = ask("Is the cluster healthy?")
+    assert a["source"] in ("rules", "recorded") and a["answer"]               # no workers: rules say so
+    assert "No workers" in a["answer"]
+    assert call(port, "/api/ask/suggestions")[0] == "Is the cluster healthy?"
