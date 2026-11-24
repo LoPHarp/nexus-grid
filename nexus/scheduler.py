@@ -65,6 +65,7 @@ class Scheduler:
         h = HANDLERS[type_]
         params = h.normalize(params) if hasattr(h, "normalize") else params
         parts = h.split(params)
+        params = h.summary(params) if hasattr(h, "summary") else params
         job = {"id": self._job_id, "type": type_, "params": params, "priority": priority,
                "state": "running", "total": len(parts), "done": 0, "created": now(), "task_ids": []}
         self._job_id += 1
@@ -98,6 +99,10 @@ class Scheduler:
         return True
 
     @staticmethod
+    def _tile(t: Task) -> list:
+        return [t.params.get("tx", t.params.get("index", 0)), t.params.get("ty", 0)]
+
+    @staticmethod
     def job_public(j: dict) -> dict:
         return {k: v for k, v in j.items() if k != "task_ids"}
 
@@ -120,7 +125,7 @@ class Scheduler:
             t.assigned_at = time.monotonic()
             asyncio.get_running_loop().create_task(self._send_task(w, t))
             self.emit({"e": "task_assigned", "task_id": t.id, "job_id": t.job_id,
-                       "worker_id": w.id, "tile": [t.params["tx"], t.params["ty"]], "attempt": t.attempts})
+                       "worker_id": w.id, "tile": self._tile(t), "attempt": t.attempts})
 
     def _pop(self) -> Task | None:
         while self._heap:
@@ -187,6 +192,7 @@ class Scheduler:
         if not t or t.state != "running" or t.worker_id != w.id:
             return                                 # stale result from a reassigned/cancelled task
         t.state, t.result = "done", frame
+        t.params.pop("data", None)                 # input file no longer needed, free the memory
         w.task_id, w.done = None, w.done + 1
         w.done_times.append(time.monotonic())
         w.last_latency_ms = round((time.monotonic() - t.assigned_at) * 1000)
@@ -198,7 +204,7 @@ class Scheduler:
         self.db.save_job(job)
         self.emit({"e": "task_done", "task_id": task_id, "job_id": job["id"], "worker_id": w.id,
                    "latency_ms": round((time.monotonic() - t.assigned_at) * 1000),
-                   "tile": [t.params["tx"], t.params["ty"]], "done": job["done"], "total": job["total"]})
+                   "tile": self._tile(t), "done": job["done"], "total": job["total"]})
         if job["state"] == "done":
             self.emit({"e": "job_done", "job": self.job_public(job)})
         self.dispatch()

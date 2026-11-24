@@ -8,6 +8,8 @@ Tile results travel as one binary frame:
     offset 5  u16  width in pixels
     offset 7  u16  height in pixels
     offset 9  ...  zlib(uint16 little-endian iteration counts, row-major)
+File result (image batch) uses the same header with frame type 2: width/height are the output
+pixel size, the payload is the encoded image file (JPEG/PNG/WEBP) as is.
 """
 import struct
 import zlib
@@ -15,12 +17,28 @@ import zlib
 import numpy as np
 
 FRAME_RESULT = 1
+FRAME_FILE = 2
 _HDR = struct.Struct(">BIHH")
 
 
 def pack_result(task_id: int, arr: np.ndarray) -> bytes:
     h, w = arr.shape
     return _HDR.pack(FRAME_RESULT, task_id, w, h) + zlib.compress(arr.astype("<u2").tobytes(), 1)
+
+
+def pack_file(task_id: int, data: bytes, w: int, h: int) -> bytes:
+    return _HDR.pack(FRAME_FILE, task_id, w, h) + data
+
+
+def frame_task_id(frame: bytes) -> int:
+    kind, task_id, _, _ = _HDR.unpack_from(frame)
+    if kind not in (FRAME_RESULT, FRAME_FILE):
+        raise ValueError(f"unknown frame type {kind}")
+    return task_id
+
+
+def frame_payload(frame: bytes) -> bytes:
+    return frame[_HDR.size:]
 
 
 def unpack_result(frame: bytes) -> tuple[int, np.ndarray]:

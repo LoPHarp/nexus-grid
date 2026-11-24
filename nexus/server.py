@@ -1,10 +1,12 @@
 """FastAPI app: REST API, worker WebSocket, event WebSocket. Run: uvicorn nexus.server:app"""
 import asyncio
 import collections
+import io
 import json
 import os
 import secrets
 import time
+import zipfile
 from contextlib import asynccontextmanager
 
 import subprocess
@@ -18,7 +20,9 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from .db import DB
+from .protocol import frame_payload, frame_task_id
 from .scheduler import Scheduler
+from .tasks import image
 
 START = time.time()
 DESCRIPTION = """Distributed computing server: jobs are split into tasks, handed to connected workers, results are collected.
@@ -133,9 +137,8 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
         j = sched.jobs.get(jid)
         if not j:
             raise HTTPException(404, "job not found (results are kept in memory only)")
-        return [{"task_id": t, "tx": sched.tasks[t].params["tx"], "ty": sched.tasks[t].params["ty"],
-                 "px": sched.tasks[t].params["px"], "py": sched.tasks[t].params["py"],
-                 "worker_id": sched.tasks[t].worker_id}
+        return [{"task_id": t, "tx": sched.tasks[t].params.get("tx", sched.tasks[t].params.get("index", 0)),
+                 "ty": sched.tasks[t].params.get("ty", 0), "worker_id": sched.tasks[t].worker_id}
                 for t in j["task_ids"] if sched.tasks[t].state == "done"]
 
     @app.get("/api/tiles/{task_id}", response_class=Response, tags=["jobs"])
@@ -145,6 +148,31 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
         if not t or t.result is None:
             raise HTTPException(404, "tile not available")
         return Response(t.result, media_type="application/octet-stream")
+
+    @app.get("/api/tasks/{task_id}/result", response_class=Response, tags=["jobs"],
+             summary="Processed file of an image task")
+    async def task_result(task_id: int):
+        t = sched.tasks.get(task_id)
+        if not t or t.result is None or t.type != "image":
+            raise HTTPException(404, "no file result for this task")
+        return Response(frame_payload(t.result), media_type=image.media_type(t.params),
+                        headers={"Content-Disposition": f'attachment; filename="{image.output_name(t.params)}"'})
+
+    @app.get("/api/jobs/{jid}/download", response_class=Response, tags=["jobs"],
+             summary="Zip of all finished files of an image job")
+    async def job_download(jid: int):
+        j = sched.jobs.get(jid)
+        if not j or j["type"] != "image":
+            raise HTTPException(404, "image job not found (results are kept in memory only)")
+        done = [sched.tasks[t] for t in j["task_ids"] if sched.tasks[t].state == "done"]
+        if not done:
+            raise HTTPException(409, "no finished files yet")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:      # images are already compressed
+            for t in done:
+                z.writestr(image.output_name(t.params), frame_payload(t.result))
+        return Response(buf.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="job{jid}.zip"'})
 
     @app.get("/api/workers", tags=["workers"], summary="Connected and recently lost workers")
     async def workers():
@@ -214,8 +242,7 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
                 if msg["type"] == "websocket.disconnect":
                     break
                 if msg.get("bytes") is not None:
-                    from .protocol import unpack_result
-                    task_id, _ = unpack_result(msg["bytes"])
+                    task_id = frame_task_id(msg["bytes"])
                     sched.task_done(w, task_id, msg["bytes"])
                 else:
                     m = json.loads(msg["text"])

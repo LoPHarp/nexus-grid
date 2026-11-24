@@ -1,5 +1,7 @@
 import numpy as np
 
+from ..protocol import pack_result
+
 DEFAULTS = {"width": 800, "height": 600, "tile": 100, "max_iter": 200,
             "cx": -0.5, "cy": 0.0, "view_w": 3.0}
 
@@ -47,3 +49,7 @@ def compute(t: dict) -> np.ndarray:
             break
     out[alive] = t["max_iter"]
     return out
+
+
+def pack(task_id: int, result: np.ndarray) -> bytes:
+    return pack_result(task_id, result)
