@@ -62,3 +62,9 @@
 - "..." buttons removed; mosaic has a labelled "Save PNG" button. All buttons audited (list in the report).
 - Tests: `tests/test_ui_headless.py` (real mouse in headless Chrome), `tests/test_desktop_window.py` (real window), 40 passed.
 - Delegated to free models: nothing.
+
+## 2026-11-24 - Stage 7: final docs and release v0.2.0
+- Done: README rewritten (what it is, mermaid architecture diagram, packet format, API, run, demo, desktop client, UI, AI and roadmap, honest token section, evidence, limitations), failure sequence diagram in `docs/ARCHITECTURE.md`, per-stage token table in `TOKEN_LOG.md`, release links point to v0.2.0.
+- CI: first run of the pywebview build failed on Windows (`$PWD` in Git Bash is not a native path for PyInstaller's `--add-data`) -> `os.path.abspath` from Python. Linux and Windows builds then passed; the macOS runner sat in the queue until the run was cancelled -> `fail-fast: false`, tag run retried.
+- Render: the push at the end of the bug-fix round took several minutes to deploy; verified afterwards on the live URL: no key needed (`POST /api/jobs` -> 201), Demo Mode, kill-by-click ("Killed Atlas-01 (demo)") and no AUTH banner, checked with real mouse events in headless Chrome.
+- Delegated to free models: nothing.

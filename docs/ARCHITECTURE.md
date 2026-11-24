@@ -29,6 +29,25 @@
 3. The server stores the frame, updates the job, emits events, dispatches the next task.
 4. When all tasks of a job are done the job becomes `done`.
 
+## Failure sequence
+
+```mermaid
+sequenceDiagram
+  participant W1 as Worker A
+  participant S as Server (scheduler)
+  participant W2 as Worker B
+  participant UI as Dashboard
+  S->>W1: task 17 (JSON)
+  S->>W2: task 18 (JSON)
+  W1--xS: connection lost / no heartbeat for 5 s
+  S->>S: mark A dead, task 17 back to the front of the queue
+  S-->>UI: worker_lost (requeued: [17])
+  W2->>S: result 18 (binary frame)
+  S->>W2: task 17 (attempt 2)
+  W2->>S: result 17
+  S-->>UI: task_done, job_done
+```
+
 ## Packet format
 JSON control messages `{"t": type, ...}`:
 - worker -> server: `hello {worker_id, name, cpus}`, `heartbeat {metrics:{cpu,mem,temp?}}`, `error {task_id,msg}`

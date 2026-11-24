@@ -10,6 +10,7 @@ Actual token spend for building Nexus Grid with Claude Code. Numbers are taken f
 ## Snapshots
 | Date/time | Stage | Input | Output | Cache | Total | Source |
 |---|---|---|---|---|---|---|
+| 2026-11-24 22:11 | Stage 7 (docs, release v0.2.0) | 352 | 318,161 | 726,684 write / 41,264,905 read | 42,310,102 | project jsonl, 167 msgs |
 | 2026-11-24 21:39 | Bug-fix round (views, kill, key, save, buttons) | 310 | 299,551 | 698,645 write / 32,366,342 read | 33,364,848 | project jsonl, 146 msgs |
 | 2026-11-24 14:10 | Stage 6 (AI feature) | 234 | 235,029 | 310,063 write / 18,757,717 read | 19,303,043 | project jsonl, 109 msgs |
 | 2026-11-24 14:03 | UI stage (dashboard + desktop client) | 204 | 210,779 | 278,385 write / 14,635,485 read | 15,124,853 | project jsonl, 96 msgs |
@@ -20,6 +21,26 @@ Actual token spend for building Nexus Grid with Claude Code. Numbers are taken f
 | 2026-11-24 11:42 | Stage 2 (dashboard) | 62 | 44,106 | 77,092 write / 2,024,567 read | 2,145,827 | project jsonl, 29 msgs |
 | 2026-11-24 11:25 | Stage 1 (core) | 40 | 23,431 | 53,941 write / 1,115,366 read | 1,192,778 | project jsonl, 19 msgs |
 | 2026-11-24 11:13 | Stage 0 (setup) | 14 | 1,988 | 29,121 write / 332,198 read | 363,321 | project jsonl, 7 msgs |
+
+## Per-stage deltas
+Differences between consecutive snapshots above (so each row is the spend since the previous snapshot; the first row includes everything before it). Computed from the snapshot rows, nothing estimated.
+
+| Stage (snapshot label) | Input | Output | Cache write | Cache read |
+|---|---|---|---|---|
+| Stage 0 (setup) | 14 | 1,988 | 29,121 | 332,198 |
+| Stage 1 (core) | 26 | 21,443 | 24,820 | 783,168 |
+| Stage 2 (dashboard) | 22 | 20,675 | 23,151 | 909,201 |
+| Stage 3 (API) | 16 | 13,145 | 13,078 | 745,435 |
+| Stage 4 (desktop worker, image batch) | 28 | 22,638 | 23,120 | 1,653,859 |
+| Stage 4 end (public check, CI) | 10 | 1,381 | 4,722 | 708,951 |
+| Stage 5 (deploy, demo, release) | 16 | 7,621 | 9,936 | 1,030,689 |
+| UI stage (dashboard + desktop client) | 72 | 121,888 | 150,437 | 8,471,984 |
+| Stage 6 (AI feature) | 30 | 24,250 | 31,678 | 4,122,232 |
+| Bug-fix round (views, kill, key, save, buttons) | 76 | 64,522 | 388,582 | 13,608,625 |
+| Stage 7 (docs, release v0.2.0) | 42 | 18,610 | 28,039 | 8,898,563 |
+| **Total** | **352** | **318,161** | **726,684** | **41,264,905** |
+
+Cache reads are 97.5% of all counted tokens: every turn re-reads the conversation context, so a long session accumulates them. Uncached input and output together are 318,513 tokens. The two largest deltas are the UI rebuild and the bug-fix round (screenshots and browser debugging).
 
 ## Free-model (FreeLLMAPI) usage
 | Date/time | Tasks delegated | Requests | Tokens | Models |
