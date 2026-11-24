@@ -10,6 +10,7 @@ Actual token spend for building Nexus Grid with Claude Code. Numbers are taken f
 ## Snapshots
 | Date/time | Stage | Input | Output | Cache | Total | Source |
 |---|---|---|---|---|---|---|
+| 2026-11-24 14:10 | Stage 6 (AI feature) | 234 | 235,029 | 310,063 write / 18,757,717 read | 19,303,043 | project jsonl, 109 msgs |
 | 2026-11-24 14:03 | UI stage (dashboard + desktop client) | 204 | 210,779 | 278,385 write / 14,635,485 read | 15,124,853 | project jsonl, 96 msgs |
 | 2026-11-24 12:23 | Stage 5 (deploy, demo, release) | 132 | 88,891 | 127,948 write / 6,163,501 read | 6,380,472 | project jsonl, 61 msgs |
 | 2026-11-24 12:04 | Stage 4 end (public check, CI) | 116 | 81,270 | 118,012 write / 5,132,812 read | 5,332,210 | project jsonl, 54 msgs |
@@ -22,6 +23,7 @@ Actual token spend for building Nexus Grid with Claude Code. Numbers are taken f
 ## Free-model (FreeLLMAPI) usage
 | Date/time | Tasks delegated | Requests | Tokens | Models |
 |---|---|---|---|---|
+| 2026-11-24 14:20 | Recorded answers for "Ask the cluster" (7 calls from Claude Code; 3 returned truncated or empty-handed output and were discarded, 6 answers kept from 4 usable replies) | 9 (FreeLLMAPI panel, 24 h; one internal provider fallback failed) | 1,216 in / 1,820 out | groq qwen/qwen3.8-27b, groq openai/gpt-oss-safeguard-20b, ovh Qwen3.5-397B-A17B, ovh Qwen3.6-27B |
 
 ## Notes
 - Planning conversations with Claude in the chat app (choosing the idea, setting up the free-model router) happened outside Claude Code and are not included in the Claude Code numbers.

@@ -20,6 +20,7 @@
 - `POST /api/demo`, `POST /api/workers/{id}/kill` - Demo Mode: the server spawns local worker processes and can kill them.
 - `nexus/tasks/image.py` - image batch handler (Pillow). File results use binary frame type 2 (same header, payload = encoded image); `GET /api/jobs/{id}/download` zips them.
 - `nexus/desktop.py`, `client.py` - desktop client: pywebview window (frameless, page loaded from `web/`) with a `LocalWorker` JS API (connect, disconnect, state, window controls) over the worker; `client.py` is the PyInstaller entry point. The page calls the server cross-origin (CORS is open, auth is a header).
+- `nexus/ai.py` - Ask the cluster: state snapshot, cache key from a coarse state, FreeLLMAPI client (urllib), recorded answers `data/ai_seed.json`, rule-based fallback.
 - `nexus/db.py` - job history in SQLite. Tile results are kept in memory only.
 
 ## Data flow

@@ -630,7 +630,32 @@ $("#m-save").onclick = () => {
   S.key = key; LS.set("nexus.key", key); if (!S.desktop) LS.set("nexus.server", url); S.base = url;
   renderKey(); $("#modal").hidden = true; clearBanner("AUTH_401"); if (changed) startConn();
 };
-document.addEventListener("keydown", e => { if (e.key === "Escape") $("#modal").hidden = true; });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { $("#modal").hidden = true; $("#ask").hidden = true; } });
+
+/* ---------- Ask the cluster ---------- */
+const SRC = { model: "Free model", cache: "Cached answer", recorded: "Recorded model answer", rules: "Rule-based answer (no model reachable)" };
+async function openAsk() {
+  $("#ask").hidden = false; $("#ask-q").focus();
+  if (!$("#ask-chips").children.length) {
+    let list = ["Is the cluster healthy?", "Which worker is slowest?", "Why is the queue growing?", "What happened to the last job?"];
+    try { list = await (await fetch(apiUrl("/api/ask/suggestions"))).json(); } catch (e) {}
+    $("#ask-chips").innerHTML = list.map(q => `<button class="chip" style="--wc:#22D3EE">${esc(q)}</button>`).join("");
+  }
+}
+async function doAsk(q) {
+  q = (q || $("#ask-q").value).trim(); if (!q) return;
+  $("#ask-q").value = q; $("#ask-go").disabled = true; $("#ask-out").innerHTML = `<span style="color:var(--text-secondary)">Thinking…</span>`;
+  try {
+    const r = await fetch(apiUrl("/api/ask"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
+    if (!r.ok) throw new Error(r.status === 429 ? "Too many questions, try again in a minute." : "Request failed: " + r.status);
+    const a = await r.json();
+    $("#ask-out").innerHTML = `<div>${esc(a.answer)}</div><div class="mono-xs" style="margin-top:6px;color:var(--text-muted)">${SRC[a.source] || a.source}${a.model ? " · " + esc(a.model) : ""}</div>`;
+  } catch (e) { $("#ask-out").innerHTML = `<span style="color:#fca5a5">${esc(e.message)}</span>`; }
+  finally { $("#ask-go").disabled = false; }
+}
+$("#ask-btn").onclick = openAsk; $("#ask-close").onclick = () => $("#ask").hidden = true; $("#ask-go").onclick = () => doAsk();
+$("#ask-q").onkeydown = e => { if (e.key === "Enter") doAsk(); };
+$("#ask-chips").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) doAsk(b.textContent); });
 
 /* ---------- My Worker (desktop only) ---------- */
 const MW = { since: 0, shown: -1, prevPrev: "" };

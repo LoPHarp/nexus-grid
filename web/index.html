@@ -25,6 +25,7 @@
   <div id="keybox" title="API key"><span class="lbl">API key</span><span class="num" id="key-mask">not set</span>
     <button class="icon-btn" id="key-eye" title="Reveal"><svg><use href="#i-eye"/></svg></button>
     <button class="icon-btn" id="key-copy" title="Copy"><svg><use href="#i-copy"/></svg></button></div>
+  <button class="icon-btn" id="ask-btn" title="Ask the cluster"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg></button>
   <button class="icon-btn" id="settings-btn" title="Settings"><svg><use href="#i-gear"/></svg></button>
   <div id="winctl" hidden>
     <button class="icon-btn" id="w-min" title="Minimize"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
@@ -137,6 +138,12 @@
   <label for="m-url">Server URL</label><input type="text" id="m-url" autocomplete="off" spellcheck="false">
   <label for="m-key">API key (stored on this device only)</label><input type="password" id="m-key" autocomplete="off">
   <div class="row" style="margin-top:20px;justify-content:flex-end"><button class="btn" id="m-diag">Copy diagnostic log</button><button class="btn" id="m-cancel">Cancel</button><button class="btn primary" id="m-save">Save</button></div></div></div>
+<div id="ask" class="glass-over" hidden><div class="callout" style="width:480px;text-align:left">
+  <h3>Ask the cluster</h3>
+  <div class="chips" id="ask-chips"></div>
+  <div class="row"><input type="text" id="ask-q" maxlength="300" placeholder="Why is the queue growing?" autocomplete="off"><button class="btn primary" id="ask-go">Ask</button></div>
+  <div id="ask-out" aria-live="polite" style="margin-top:14px;min-height:44px"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:8px"><button class="btn" id="ask-close">Close</button></div></div></div>
 <div id="tip"></div><div id="fx"></div><div id="toast"></div>
 <input type="file" id="files" accept="image/*" multiple hidden>
 <script src="app.js"></script>

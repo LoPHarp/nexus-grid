@@ -46,3 +46,10 @@
 - Fixed on the way: compact tab panel hidden by a leftover min-height; right column overflowed at 720 px; mosaic tiles stretched (now square, legend below); feed panel pushed the page height.
 - Not verified: Windows and macOS builds (CI only, to be rebuilt on the next tag), tooltip and hover motion by eye, 60 fps claims (no profiler run), real 60 s cold start.
 - Delegated to free models: nothing (design and motion by Claude).
+
+## 2026-11-24 - Stage 6: AI feature
+- Done: "Ask the cluster" (roadmap item 3, minimal): `nexus/ai.py`, `POST /api/ask`, UI popover. Order: cache -> free model (env-configured) -> recorded answers -> rules. Roadmap written in README.
+- Why this one: smallest feature that is useful in a demo and testable without a model; the fallback chain keeps the public demo alive (Render cannot reach a local FreeLLMAPI).
+- Delegated to free models: recorded answers via `ask_freellmapi` (7 calls). Result: reasoning models (Qwen3.6/3.5, one Qwen3.8 reply) spent the token budget thinking and returned truncated text; asked twice, then dropped the 0/0 and 4/4-running states and kept only complete JSON replies (3 states x 2 questions). The other two canned questions need per-worker numbers, so they go to rules, not to invented model text.
+- Result: `pytest` 31 passed (cache hit skips the model, failure falls back, rate limit, seed keys valid, endpoint). Screenshot `docs/ui-check/ask.png`.
+- Not verified: the HTTP path to FreeLLMAPI (no key in this environment).

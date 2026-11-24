@@ -40,6 +40,14 @@ Implements `docs/design/DESIGN.md` (layout, tokens, motion, states, compact layo
 ## Demo
 `set -a; . ./.env; set +a; demo/demo.sh` runs the whole scenario against `NEXUS_URL` (default: local server): 4 workers connect, a 192-tile Mandelbrot job renders, one worker is killed, its tiles are re-assigned, the job completes and a worker table is printed. Or press **Demo Mode** on the dashboard. Recording script: [docs/DEMO.md](docs/DEMO.md).
 
+## AI features and roadmap
+**Implemented: Ask the cluster** (sparkle button in the top bar, or `POST /api/ask`). Questions about the live cluster are answered in this order: response cache (60 s, keyed by question + coarse state) -> a free model through [FreeLLMAPI](https://github.com/) (OpenAI-compatible; enabled with `FREELLMAPI_URL`, `FREELLMAPI_KEY`, optional `FREELLMAPI_MODEL`) -> answers recorded from a free model in `data/ai_seed.json` -> rule-based answer from the same facts. The `source` field and the UI label say which one answered, so a slow or rate-limited model never breaks the demo. Model calls are limited to 6 per minute, the endpoint to 30. Only counts, worker names, sensor values and event names are sent to the model, never keys or file contents.
+
+Roadmap (not built):
+1. Smart scheduler: predict task duration per worker from past latencies and assign by expected finish time.
+2. Anomaly detection on worker metrics (overheating, rising latency before a crash) with an alert in the event feed.
+3. Richer questions: pass metric history to the model instead of a snapshot, and let it reference tiles and jobs.
+
 ## Evidence
 | Claim | Command |
 |---|---|
@@ -51,6 +59,7 @@ Implements `docs/design/DESIGN.md` (layout, tokens, motion, states, compact layo
 | Public deployment works end to end | `.venv/bin/python -m nexus.worker --url wss://nexus-grid-2ivy.onrender.com/ws/worker --key $KEY`, then `POST /api/jobs` (see `DEVLOG.md`, Stage 3 for the recorded run) |
 | Image batch: resize, convert, zip download, bytes not stored in the job record | `tests/test_image.py` |
 | The desktop window loads the bundled page, connects and appears as a worker | `python -m nexus.desktop --url http://localhost:8000 --autoconnect --selftest 7` prints a DOM probe |
+| Ask the cluster: cache, model failure fallback, rate limit, recorded answers | `tests/test_ai.py`, `tests/test_failover.py::test_ask_endpoint_without_model_uses_recorded_or_rules` |
 | Dashboard and Demo Mode endpoint are served and work | `tests/test_failover.py::test_dashboard_and_demo_endpoint`, or open `/` |
 | Actual token spend | `TOKEN_LOG.md`, produced by `tools/log_tokens.sh` |
 | Prompt the work started from | `PROMPT.md` |
@@ -62,6 +71,7 @@ Implements `docs/design/DESIGN.md` (layout, tokens, motion, states, compact layo
 - Metrics history is in memory (last hour); lost on restart.
 - Demo Mode workers run as subprocesses of the server, so on a small free instance they compete with it for CPU.
 - Image batch sends files inside JSON (base64): at most 50 images, 5 MB each, 25 MB per job. Results are kept in memory and lost on restart; download them soon after the job ends.
+- Ask the cluster: the live model path (HTTP to FreeLLMAPI) is covered by unit tests with a fake model only; I had no FreeLLMAPI HTTP key in this environment. The recorded answers (6, for 3 cluster states x 2 questions) came from real free-model calls through the MCP server. The public Render server has no model, so it answers from recorded answers or rules. Free reasoning models often truncated their output; only complete replies were kept.
 - UI vs concept art: the mosaic shows the real 192 tiles (16x12), not the 36 large tiles of the mockup; event times are 24 h `HH:MM:SS`; job priority is shown, not editable; the key is the only credential and lives in browser/desktop storage. Server-sleep and error screens were checked by simulating an unreachable server; the 60 s Render cold start itself was not timed against the new screen.
 - The Linux client bundles Qt WebEngine and is about 250 MB; Windows and macOS use the system web view. The `v0.1.0` release assets are the earlier Tk build until a new tag is cut.
 - The executable is built per OS in CI; I could only run the Linux build myself. The CI run (build-client, `workflow_dispatch`) built all three; Windows and macOS executables have not been launched by hand.

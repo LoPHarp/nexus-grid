@@ -20,6 +20,7 @@ CORS is open (any origin, no cookies), because the desktop client serves the pag
 | `GET /api/workers` | workers with `alive`, `busy`, `done`, latest sensors |
 | `GET /api/metrics` | now: workers alive/total, queue depth, tasks/s, running jobs, jobs done |
 | `GET /api/metrics/history?seconds=300` | one point per second, up to the last hour (in memory) |
+| `POST /api/ask` `{"question": "..."}`, `GET /api/ask/suggestions` | ask about the cluster; returns `answer` and `source` (`cache`, `model`, `recorded`, `rules`); 30 questions per minute |
 | `GET /api/health` | liveness |
 | `POST /api/demo?workers=4`, `POST /api/workers/{id}/kill` | Demo Mode: start local demo workers and a job; kill a demo worker. `/api/demo` is limited to one call per 3 s |
 
