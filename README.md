@@ -26,12 +26,12 @@ Docker: `docker build -t nexus-grid . && docker run -p 8000:8000 -e PORT=8000 ne
   - [Linux x86-64](https://github.com/LoPHarp/nexus-grid/releases/download/v0.1.0/nexus-worker-Linux)
 
   **Build status:** the Linux binary was built by CI and I ran it by hand. **The Windows and macOS binaries were produced by CI (GitHub Actions) and have not been run manually.** None are code-signed.
-- Run the client: start it, open **My Worker**, enter the server URL (`https://nexus-grid-2ivy.onrender.com`) and the access key, press Connect. Flags: `--url`, `--key`, `--name`, `--autoconnect`.
+- Run the client: start it, open **My Worker**, enter the server URL (`https://nexus-grid-2ivy.onrender.com`) press Connect (the public demo server needs no key; a key field is there only for servers started with `NEXUS_API_KEY`). Flags: `--url`, `--key`, `--name`, `--autoconnect`.
   - Windows: double-click; SmartScreen shows "unknown publisher": More info -> Run anyway.
   - macOS: `chmod +x nexus-worker-macOS && xattr -d com.apple.quarantine nexus-worker-macOS && ./nexus-worker-macOS`.
   - Linux: `chmod +x nexus-worker-Linux && ./nexus-worker-Linux` (needs a desktop session).
 - Rebuild locally: `tools/build_client.sh` (current OS only). CI: `.github/workflows/build-client.yml`, runs on `v*` tags and manually.
-- Headless worker: `set -a; . ./.env; set +a; python -m nexus.worker` (reads `NEXUS_URL`, `NEXUS_API_KEY`). Keep the key in an untracked `.env`.
+- Headless worker: `python -m nexus.worker --url https://nexus-grid-2ivy.onrender.com` (no key needed on the public server; for a keyed server set `NEXUS_API_KEY` in the environment or an untracked `.env`, never commit it).
 - Image batch (resize to fit `max_side`, re-compress, convert JPEG/PNG/WEBP): `python tools/submit_images.py ./photos --max-side 800 --format WEBP --out out`, or choose **Image Batch** in the dashboard's Active Job panel and press **+ New**.
 
 ## UI
@@ -52,11 +52,11 @@ Roadmap (not built):
 | Claim | Command |
 |---|---|
 | Queue, priorities, heartbeat timeout, reassignment, stale results, retry limit | `.venv/bin/python -m pytest tests/test_core.py` |
-| Same scenario against the public server (4 workers, kill 1, 192/192 done) | `demo/demo.sh` with `NEXUS_URL` and `NEXUS_API_KEY` set |
+| Same scenario against the public server (4 workers, kill 1, 192/192 done) | `NEXUS_URL=https://nexus-grid-2ivy.onrender.com demo/demo.sh` (no key) |
 | Real processes: a worker is killed mid-job and the job still completes | `.venv/bin/python -m pytest tests/test_failover.py` or `demo/failover.sh` |
 | Workers reconnect after a server restart | `tests/test_failover.py::test_worker_reconnects_after_server_restart` |
-| `X-API-Key` is enforced on job writes and on the worker socket; history endpoint records metrics | `tests/test_auth_history.py` |
-| Public deployment works end to end | `.venv/bin/python -m nexus.worker --url wss://nexus-grid-2ivy.onrender.com/ws/worker --key $KEY`, then `POST /api/jobs` (see `DEVLOG.md`, Stage 3 for the recorded run) |
+| Optional `X-API-Key` (only when the server sets `NEXUS_API_KEY`) is enforced on job writes and on the worker socket; history endpoint records metrics | `tests/test_auth_history.py` |
+| Public deployment works end to end | `.venv/bin/python -m nexus.worker --url https://nexus-grid-2ivy.onrender.com`, then `POST /api/jobs` (no key) (see `DEVLOG.md`, Stage 3 for the recorded run) |
 | Image batch: resize, convert, zip download, bytes not stored in the job record | `tests/test_image.py` |
 | The desktop window loads the bundled page, connects and appears as a worker | `python -m nexus.desktop --url http://localhost:8000 --autoconnect --selftest 7` prints a DOM probe |
 | Ask the cluster: cache, model failure fallback, rate limit, recorded answers | `tests/test_ai.py`, `tests/test_failover.py::test_ask_endpoint_without_model_uses_recorded_or_rules` |
@@ -75,7 +75,7 @@ Roadmap (not built):
 - UI vs concept art: the mosaic shows the real 192 tiles (16x12), not the 36 large tiles of the mockup; event times are 24 h `HH:MM:SS`; job priority is shown, not editable; the key is the only credential and lives in browser/desktop storage. Server-sleep and error screens were checked by simulating an unreachable server; the 60 s Render cold start itself was not timed against the new screen.
 - The Linux client bundles Qt WebEngine and is about 250 MB; Windows and macOS use the system web view. The `v0.1.0` release assets are the earlier Tk build until a new tag is cut.
 - The executable is built per OS in CI; I could only run the Linux build myself. The CI run (build-client, `workflow_dispatch`) built all three; Windows and macOS executables have not been launched by hand.
-- One task per worker at a time; a single shared access key, no per-user accounts; reads, `/ws/events` and Demo Mode are open by design so the public demo works.
+- One task per worker at a time; the public demo server runs open (no key), so anyone can submit jobs and connect workers; the optional single shared key (`NEXUS_API_KEY`) is the only access control and there are no per-user accounts.
 - Not load-tested beyond a handful of local workers.
 
 ## Roadmap

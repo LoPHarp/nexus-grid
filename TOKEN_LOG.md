@@ -10,6 +10,7 @@ Actual token spend for building Nexus Grid with Claude Code. Numbers are taken f
 ## Snapshots
 | Date/time | Stage | Input | Output | Cache | Total | Source |
 |---|---|---|---|---|---|---|
+| 2026-11-24 21:39 | Bug-fix round (views, kill, key, save, buttons) | 310 | 299,551 | 698,645 write / 32,366,342 read | 33,364,848 | project jsonl, 146 msgs |
 | 2026-11-24 14:10 | Stage 6 (AI feature) | 234 | 235,029 | 310,063 write / 18,757,717 read | 19,303,043 | project jsonl, 109 msgs |
 | 2026-11-24 14:03 | UI stage (dashboard + desktop client) | 204 | 210,779 | 278,385 write / 14,635,485 read | 15,124,853 | project jsonl, 96 msgs |
 | 2026-11-24 12:23 | Stage 5 (deploy, demo, release) | 132 | 88,891 | 127,948 write / 6,163,501 read | 6,380,472 | project jsonl, 61 msgs |
