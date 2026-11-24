@@ -4,6 +4,8 @@ on:
   push:
     tags: ["v*"]
     paths: ["nexus/**", "client.py", "tools/build_client.sh", "requirements*.txt", ".github/workflows/build-client.yml"]
+permissions:
+  contents: write
 jobs:
   build:
     strategy:
@@ -19,8 +21,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
       - shell: bash
         run: PYTHON=python tools/build_client.sh
-      - if: runner.os != 'Windows'
-        run: mv dist/nexus-worker dist/nexus-worker-${{ runner.os }}
+      - shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then mv dist/nexus-worker.exe dist/nexus-worker-Windows.exe
+          else mv dist/nexus-worker dist/nexus-worker-$RUNNER_OS; fi
       - uses: actions/upload-artifact@v4
         with:
           name: nexus-worker-${{ matrix.os }}
