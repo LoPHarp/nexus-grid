@@ -30,3 +30,11 @@
 - Tested: `pytest` 22 passed; GUI and the packed Linux binary connected to a local server and the binary's worker took part in a job; local image job 3 files 9.3 MB -> 0.29 MB. No screenshot tool on this machine, so the window was checked by behaviour, not by eye. Windows/macOS builds not run yet.
 - Delegated to free models: nothing.
 - After push: Render redeployed; public image job (3 files, 9.3 MB -> 0.47 MB) through `wss://` worker + `tools/submit_images.py` with the key from `.env`: done. CI `build-client` run: Linux, Windows, macOS builds all succeeded (artifacts ~50/31/20 MB).
+
+## 2026-11-24 - Stage 5: deploy and demo
+- Done: `demo/demo.sh` (scenario for the video against any server, waits for a sleeping host), `docs/DEMO.md` (shot list), `worker_removed` event so dead nodes disappear from the dashboard after 60 s, release `v0.1.0` with Linux, Windows and macOS clients built by CI (tag push), README download links and run instructions.
+- Public run (Render free): `demo/demo.sh` 4 workers, killed w1 at 64/192, finished 192/192 on the others (w2 59, w3 58, w4 58 tiles, w1 17). Dashboard Demo Mode button (4 server-side workers) also worked: the 512 MB instance stayed healthy. Screenshot of the public dashboard checked by eye.
+- Fixed: CI release step needed `contents: write` and unique asset names per OS (added before tagging).
+- Verified: the downloaded Linux release binary starts. Windows and macOS assets exist but were not run by hand.
+- Not done yet: the video itself (Denys records it with docs/DEMO.md), the submission form.
+- Delegated to free models: nothing.
