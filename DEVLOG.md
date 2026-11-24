@@ -22,3 +22,10 @@
 - Result: `pytest` 14 passed (new: key enforcement, rejected worker, history).
 - TODO for Denys: set `NEXUS_API_KEY` in the Render environment, otherwise the public server stays open.
 - Delegated to free models: nothing.
+
+## 2026-11-24 - Stage 4: desktop worker and image batch
+- Done: `nexus/tasks/image.py` (Pillow), binary frame type 2, zip download, `tools/submit_images.py`, `nexus/gui.py` (tkinter window), `tools/build_client.sh` (PyInstaller, 36 MB Linux binary), CI workflow for Linux/Windows/macOS. Access key moved to untracked `.env` (verified: not in tracked files or git history).
+- Why: tkinter is in the standard library (no extra dependency); images travel as base64 JSON because it needs no multipart dependency; handler interface gained `summary()` and `pack()` so job records never hold image bytes.
+- Failures fixed: worker CLI did not turn `https://` into `wss://` (found when testing against the public URL, reconnect loop with InvalidURI) -> shared `to_ws()`. The public server still ran the Stage 3 build, so the public image test waits for the redeploy.
+- Tested: `pytest` 22 passed; GUI and the packed Linux binary connected to a local server and the binary's worker took part in a job; local image job 3 files 9.3 MB -> 0.29 MB. No screenshot tool on this machine, so the window was checked by behaviour, not by eye. Windows/macOS builds not run yet.
+- Delegated to free models: nothing.

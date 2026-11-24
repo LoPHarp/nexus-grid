@@ -14,11 +14,14 @@ When the server starts with `NEXUS_API_KEY=<secret>`, these need the header `X-A
 | `GET /api/jobs`, `GET /api/jobs/{id}` | job list (newest first) / one job: `state` is `running`, `done`, `failed` or `aborted` |
 | `DELETE /api/jobs/{id}` | cancel and delete |
 | `GET /api/jobs/{id}/tiles`, `GET /api/tiles/{task_id}` | finished tiles of a job / one tile as a binary frame ([format](ARCHITECTURE.md#packet-format)); kept in memory only |
+| `GET /api/tasks/{id}/result`, `GET /api/jobs/{id}/download` | processed file of an image task / zip of a finished image job (memory only) |
 | `GET /api/workers` | workers with `alive`, `busy`, `done`, latest sensors |
 | `GET /api/metrics` | now: workers alive, queue depth, tasks/s, running jobs |
 | `GET /api/metrics/history?seconds=300` | one point per second, up to the last hour (in memory) |
 | `GET /api/health` | liveness |
 | `POST /api/demo?workers=4`, `POST /api/workers/{id}/kill` | Demo Mode: start local demo workers and a job; kill a demo worker. `/api/demo` is limited to one call per 3 s |
+
+Image batch params: `images` `[{name, data(base64)}]`, `max_side` 1024 (16..8192), `format` `JPEG|PNG|WEBP`, `quality` 80. Fetch results with `GET /api/tasks/{task_id}/result` or `GET /api/jobs/{id}/download` (zip). Limits: 50 images, 5 MB each, 25 MB total.
 
 Mandelbrot params (defaults): `width` 800, `height` 600 (1..4096), `tile` 100 (8..512), `max_iter` 200 (1..5000), `cx` -0.5, `cy` 0, `view_w` 3.0. One tile = one task.
 

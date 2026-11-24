@@ -18,6 +18,8 @@
 - `nexus/worker.py` - connects, computes in a thread (so heartbeats continue during computation), reconnects with exponential backoff (1 s to 30 s, jittered).
 - `web/index.html` - single-file dashboard (plain canvas, no libraries): mosaic, worker graph with pulses, five charts sampled at 1 Hz in the browser, HUD. It reads `/ws/events`, fetches tile frames from `/api/tiles/{id}` and decodes them with `DecompressionStream`.
 - `POST /api/demo`, `POST /api/workers/{id}/kill` - Demo Mode: the server spawns local worker processes and can kill them.
+- `nexus/tasks/image.py` - image batch handler (Pillow). File results use binary frame type 2 (same header, payload = encoded image); `GET /api/jobs/{id}/download` zips them.
+- `nexus/gui.py`, `client.py` - desktop worker window and the PyInstaller entry point.
 - `nexus/db.py` - job history in SQLite. Tile results are kept in memory only.
 
 ## Data flow
@@ -39,7 +41,7 @@ Binary result frame (big endian header, then payload):
 | 1 | u32 | task id |
 | 5 | u16 | width (px) |
 | 7 | u16 | height (px) |
-| 9 | n | zlib(uint16 little-endian iteration counts, row-major) |
+| 9 | n | type 1: zlib(uint16 little-endian iteration counts, row-major); type 2: encoded image file (JPEG/PNG/WEBP), width/height are then the output size |
 
 ## Failure handling
 - A worker that disconnects, or sends nothing for `HEARTBEAT_TIMEOUT` seconds (default 5), is marked dead; its running task is re-queued at the front.
