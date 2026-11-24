@@ -1,7 +1,7 @@
 # Architecture
 
 ```
- browser (dashboard, Stage 2) --WS /ws/events--+
+ browser (dashboard, web/index.html) --WS /ws/events--+
  curl / API clients ---------- REST /api/* ----+--> [ FastAPI server ] --- SQLite (job history)
                                                       |  Scheduler: priority queue, worker registry,
                                                       |  heartbeat reaper, reassignment
@@ -16,6 +16,8 @@
 - `nexus/scheduler.py` - jobs, tasks, workers. One task per worker at a time. Queue ordered by priority, then FIFO; re-queued tasks go to the front of their priority level.
 - `nexus/tasks/` - task handlers. `split(params)` (server) turns a job into tasks, `compute(params)` (worker) runs one. A new task type is one module registered in `HANDLERS`.
 - `nexus/worker.py` - connects, computes in a thread (so heartbeats continue during computation), reconnects with exponential backoff (1 s to 30 s, jittered).
+- `web/index.html` - single-file dashboard (plain canvas, no libraries): mosaic, worker graph with pulses, five charts sampled at 1 Hz in the browser, HUD. It reads `/ws/events`, fetches tile frames from `/api/tiles/{id}` and decodes them with `DecompressionStream`.
+- `POST /api/demo`, `POST /api/workers/{id}/kill` - Demo Mode: the server spawns local worker processes and can kill them.
 - `nexus/db.py` - job history in SQLite. Tile results are kept in memory only.
 
 ## Data flow

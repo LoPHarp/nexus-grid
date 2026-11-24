@@ -1,6 +1,10 @@
 # Nexus Grid
 
-Distributed computing prototype: a FastAPI server hands tasks to connected workers, collects results, and re-assigns the tasks of a worker that dies. Stage 1 (core) only: no dashboard yet.
+Distributed computing prototype: a FastAPI server hands tasks to connected workers, collects results, and re-assigns the tasks of a worker that dies. Includes a live web dashboard served by the same process.
+
+![dashboard](docs/dashboard.png)
+
+Open `http://localhost:8000/` and press **Demo Mode**: the server starts 4 local demo workers and a Mandelbrot job. Click a demo worker in the graph to kill it and watch its tile get re-assigned.
 
 ## Run
 ```bash
@@ -18,6 +22,7 @@ Docker: `docker build -t nexus-grid . && docker run -p 8000:8000 -e PORT=8000 ne
 | Queue, priorities, heartbeat timeout, reassignment, stale results, retry limit | `.venv/bin/python -m pytest tests/test_core.py` |
 | Real processes: a worker is killed mid-job and the job still completes | `.venv/bin/python -m pytest tests/test_failover.py` or `demo/failover.sh` |
 | Workers reconnect after a server restart | `tests/test_failover.py::test_worker_reconnects_after_server_restart` |
+| Dashboard and Demo Mode endpoint are served and work | `tests/test_failover.py::test_dashboard_and_demo_endpoint`, or open `/` |
 | Actual token spend | `TOKEN_LOG.md`, produced by `tools/log_tokens.sh` |
 | Prompt the work started from | `PROMPT.md` |
 
@@ -25,8 +30,10 @@ Docker: `docker build -t nexus-grid . && docker run -p 8000:8000 -e PORT=8000 ne
 - SQLite is ephemeral on Render's free plan (no persistent disk): job history is lost on restart or redeploy.
 - Tile results are held in memory only; running jobs are marked `aborted` after a server restart.
 - A free Render service sleeps after 15 minutes without traffic and needs about a minute to wake; workers retry with backoff until it is back. Free-tier WebSocket connections may also be dropped by the platform; workers reconnect.
+- Dashboard chart history is kept in the browser only (starts empty on page load); no history endpoint yet.
+- Demo Mode workers run as subprocesses of the server, so on a small free instance they compete with it for CPU.
 - One task per worker at a time; no authentication yet (planned for the API stage).
 - Not load-tested beyond a handful of local workers.
 
 ## Roadmap
-Dashboard (Stage 2), API key and OpenAPI polish (3), desktop worker window and image-batch tasks (4), deploy and demo (5), one small AI feature (6).
+API key and OpenAPI polish (3), desktop worker window and image-batch tasks (4), deploy and demo (5), one small AI feature (6).
