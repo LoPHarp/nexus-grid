@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 
 import pytest
@@ -113,3 +114,17 @@ def test_ask_endpoint_without_model_uses_recorded_or_rules(procs):
     assert a["source"] in ("rules", "recorded") and a["answer"]               # no workers: rules say so
     assert "No workers" in a["answer"]
     assert call(port, "/api/ask/suggestions")[0] == "Is the cluster healthy?"
+
+
+def test_only_demo_workers_are_killable_and_flagged(procs):
+    port, spawn = procs
+    spawn("-m", "nexus.worker", "--url", f"ws://127.0.0.1:{port}/ws/worker", "--name", "Real-01", "--id", "real1")
+    call(port, "/api/demo?workers=2", "POST")
+    wait_for(lambda: len(call(port, "/api/workers")) == 3, 20, "workers did not connect")
+    flags = {w["id"]: w["demo"] for w in call(port, "/api/workers")}
+    assert flags == {"real1": False, "demo1": True, "demo2": True}
+    with pytest.raises(urllib.error.HTTPError) as e:
+        call(port, "/api/workers/real1/kill", "POST")
+    assert e.value.code == 404                                        # real workers cannot be killed through the API
+    assert {w["id"]: w for w in call(port, "/api/workers")}["real1"]["alive"]
+    assert call(port, "/api/workers/demo1/kill", "POST") == {"killed": "demo1"}

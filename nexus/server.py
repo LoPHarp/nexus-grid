@@ -241,6 +241,7 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
         for i in range(1, min(max(workers, 1), 8) + 1):
             wid = f"demo{i}"
             label = f"{STARS[(i - 1) % len(STARS)]}-{i:02d}"
+            sched.demo_ids.add(wid)
             if wid not in demo_procs:
                 demo_procs[wid] = subprocess.Popen(
                     [sys.executable, "-m", "nexus.worker", "--url", f"ws://127.0.0.1:{port}/ws/worker",
@@ -307,6 +308,13 @@ def create_app(db_path: str | None = None, heartbeat_timeout: float | None = Non
             pass
         finally:
             subscribers.discard(q)
+
+    @app.middleware("http")
+    async def revalidate_static(request: Request, call_next):
+        r = await call_next(request)
+        if not request.url.path.startswith("/api"):
+            r.headers["Cache-Control"] = "no-cache"          # always revalidate: HTML, CSS and JS must come from the same deploy
+        return r
 
     web = Path(__file__).resolve().parent.parent / "web"
     if web.is_dir():

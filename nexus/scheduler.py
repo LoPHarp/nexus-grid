@@ -38,11 +38,12 @@ class Worker:
     done: int = 0
     metrics: dict = field(default_factory=dict)
     done_times: list = field(default_factory=list)
+    demo: bool = False             # started by Demo Mode: the only workers the UI may kill
     last_latency_ms: int = 0
 
     def public(self) -> dict:
         return {"id": self.id, "name": self.name, "alive": self.alive, "busy": self.task_id is not None,
-                "task_id": self.task_id, "done": self.done, "cpus": self.cpus, "metrics": self.metrics}
+                "task_id": self.task_id, "done": self.done, "cpus": self.cpus, "metrics": self.metrics, "demo": self.demo}
 
 
 class Scheduler:
@@ -57,6 +58,7 @@ class Scheduler:
         self._task_ids = itertools.count(1)
         self._job_id = db.next_job_id()
         self.completed_times: list[float] = []
+        self.demo_ids: set[str] = set()       # ids of workers spawned by Demo Mode
 
     # ---- jobs ----
     def submit(self, type_: str, params: dict, priority: int = 0) -> dict:
@@ -146,7 +148,7 @@ class Scheduler:
         old = self.workers.get(wid)
         if old:                                   # same worker reconnecting: drop the stale session
             self.worker_lost(wid, "replaced by new connection")
-        w = Worker(wid, name, send, cpus)
+        w = Worker(wid, name, send, cpus, demo=wid in self.demo_ids)
         self.workers[wid] = w
         self.emit({"e": "worker_joined", "worker": w.public()})
         self.dispatch()

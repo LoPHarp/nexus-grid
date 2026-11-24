@@ -38,6 +38,7 @@ class LocalWorker:
         self._stats, self._log, self._thread, self._loop, self._task = {"state": "stopped"}, [], None, None, None
         self._window = None
         self._maximized = False
+        self._save_dir = None                      # tests: write saved files here instead of opening a dialog
 
     # ---- worker control ----
     def get_config(self):
@@ -67,6 +68,26 @@ class LocalWorker:
         s["log"], s["log_len"] = self._log[since:], len(self._log)
         s["uptime_s"] = round(time.time() - s["since"]) if s.get("since") and s.get("state") == "online" else 0
         return s
+
+    def save_file(self, name, b64):
+        """Native save dialog (anchor downloads do not work inside pywebview). Returns {ok, path | cancelled | error}."""
+        import base64
+        try:
+            data = base64.b64decode(b64)
+            name = Path(name).name or "download"
+            if self._save_dir:
+                path = Path(self._save_dir) / name
+            else:
+                import webview
+                kind = webview.FileDialog.SAVE if hasattr(webview, "FileDialog") else webview.SAVE_DIALOG
+                res = self._window.create_file_dialog(kind, save_filename=name)
+                if not res:
+                    return {"ok": False, "cancelled": True}
+                path = Path(res if isinstance(res, str) else res[0])
+            path.write_bytes(data)
+            return {"ok": True, "path": str(path)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     # ---- window controls (frameless window) ----
     def minimize(self):
@@ -110,6 +131,8 @@ def main():
     ap.add_argument("--key", default=os.environ.get("NEXUS_API_KEY", ""))
     ap.add_argument("--name", default="")
     ap.add_argument("--autoconnect", action="store_true")
+    ap.add_argument("--save-dir", default="", help="save downloads here without a dialog (tests)")
+    ap.add_argument("--script", default="", help="JS file (async function body) run in the window after load; its result is printed (UI checks)")
     ap.add_argument("--selftest", type=float, default=0, help="print a DOM probe after N seconds and exit (CI)")
     a = ap.parse_args()
     api = LocalWorker(a.url, a.key, a.name)
@@ -117,17 +140,30 @@ def main():
     win = webview.create_window("Nexus Grid", page, js_api=api, width=1360, height=820, min_size=(380, 640),
                                 frameless=True, easy_drag=False, background_color="#050811")
     api._window = win
+    api._save_dir = a.save_dir or None
 
     def after_start():
         if a.autoconnect:
             time.sleep(1.5)
             api.connect(api._cfg["url"], api._key, api._cfg["name"])
+        if a.script:
+            time.sleep(2.5)
+            code = Path(a.script).read_text()
+            win.evaluate_js("window.__scriptRes=null;(async()=>{" + code + "})().then(v=>window.__scriptRes=JSON.stringify(v),e=>window.__scriptRes=JSON.stringify({error:String(e)}))")
+            for _ in range(240):
+                res = win.evaluate_js("window.__scriptRes")
+                if res:
+                    break
+                time.sleep(0.5)
+            print("SCRIPT", res, flush=True)
+            win.destroy()
         if a.selftest:
             time.sleep(a.selftest)
             print("PROBE", win.evaluate_js("JSON.stringify(window.__probe ? window.__probe() : null)"), flush=True)
             win.destroy()
 
-    webview.start(after_start, private_mode=False, storage_path=str(Path.home() / ".nexus-grid-webview"))
+    # private mode = no persistent web cache: the page is bundled with the app, an old cached copy must never win after an update
+    webview.start(after_start, private_mode=True)
 
 
 if __name__ == "__main__":
