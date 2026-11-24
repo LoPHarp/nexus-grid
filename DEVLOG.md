@@ -14,3 +14,11 @@
 - Checked: headless Chrome screenshot (`docs/dashboard.png`) after Demo Mode + killing one worker: mosaic filling, dead node red, HUD live. Not checked: Firefox/Safari, phone layout by eye.
 - Result: `pytest` 12 passed (new: static page, demo endpoint, kill, binary tile fetch).
 - Delegated to free models: nothing.
+
+## 2026-11-24 - Stage 3: API
+- Done: `X-API-Key` (env `NEXUS_API_KEY`) on `POST/DELETE /api/jobs` and `/ws/worker`; `GET /api/metrics/history`; typed OpenAPI models, tags, Authorize button; `docs/API.md`; dashboard charts prefilled from history; `/api/demo` limited to 1 call per 3 s.
+- Why: only writes and the worker socket are keyed, so the public dashboard and Demo Mode work for viewers while nobody can inject jobs or fake workers. Key unset = open dev mode.
+- Public check (Render, Stage 2 build, no key set yet): local worker over `wss://`, 320x240 job = 48 tiles, done in ~14 s; socket stayed connected with no reconnect for the 10+ minutes it was watched.
+- Result: `pytest` 14 passed (new: key enforcement, rejected worker, history).
+- TODO for Denys: set `NEXUS_API_KEY` in the Render environment, otherwise the public server stays open.
+- Delegated to free models: nothing.
