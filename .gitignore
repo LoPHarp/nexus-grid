@@ -1,0 +1,10 @@
+NEW_CHAT_CONTEXT.md
+.env
+*.db
+*.key
+.directory
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.claude/settings.local.json
